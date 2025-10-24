@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { User } from "@shared/schema";
 
 export async function seedAdminUser() {
   try {
@@ -17,14 +18,7 @@ export async function seedAdminUser() {
         "User"
       );
       
-      const db = await import("./db").then(m => m.db);
-      const { users } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
-      
-      await db
-        .update(users)
-        .set({ isAdmin: true })
-        .where(eq(users.id, adminUser.id));
+      await User.findByIdAndUpdate(adminUser._id, { isAdmin: true });
       
       console.log("Admin user created successfully (username: admin, password: admin123)");
     } else {

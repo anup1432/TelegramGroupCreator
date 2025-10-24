@@ -1,85 +1,77 @@
 import {
-  users,
-  telegramConnections,
-  orders,
-  groups,
-  transactions,
-  paymentSettings,
-  walletAddresses,
-  autoMessages,
-  type User,
-  type UpsertUser,
-  type TelegramConnection,
+  User,
+  TelegramConnection,
+  Order,
+  Group,
+  Transaction,
+  PaymentSetting,
+  WalletAddress,
+  AutoMessage,
+  type UserType,
+  type TelegramConnectionType,
   type InsertTelegramConnection,
-  type Order,
+  type OrderType,
   type InsertOrder,
-  type Group,
-  type Transaction,
+  type GroupType,
+  type TransactionType,
   type InsertTransaction,
-  type PaymentSetting,
+  type PaymentSettingType,
   type InsertPaymentSetting,
-  type WalletAddress,
+  type WalletAddressType,
   type InsertWalletAddress,
-  type AutoMessage,
+  type AutoMessageType,
 } from "@shared/schema";
-import { db } from "./db";
-import { eq, desc, and, sql } from "drizzle-orm";
 import bcrypt from "bcrypt";
+import mongoose from "mongoose";
+
+function convertToId<T extends { _id: any }>(doc: T): Omit<T, '_id'> & { id: string } {
+  const { _id, ...rest } = doc;
+  return { ...rest, id: _id.toString() } as Omit<T, '_id'> & { id: string };
+}
 
 export interface IStorage {
-  // User operations
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<User>;
-  upsertUser(user: UpsertUser): Promise<User>;
-  getAllUsers(): Promise<User[]>;
-  updateUserBalance(userId: string, amount: string): Promise<User>;
+  getUser(id: string): Promise<UserType | undefined>;
+  getUserByUsername(username: string): Promise<UserType | undefined>;
+  createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<UserType>;
+  getAllUsers(): Promise<UserType[]>;
+  updateUserBalance(userId: string, amount: number): Promise<UserType>;
   verifyPassword(userId: string, password: string): Promise<boolean>;
   
-  // Telegram connection operations
-  getTelegramConnections(userId: string): Promise<TelegramConnection[]>;
-  getActiveTelegramConnection(userId: string): Promise<TelegramConnection | undefined>;
-  createTelegramConnection(connection: InsertTelegramConnection): Promise<TelegramConnection>;
+  getTelegramConnections(userId: string): Promise<TelegramConnectionType[]>;
+  getActiveTelegramConnection(userId: string): Promise<TelegramConnectionType | undefined>;
+  createTelegramConnection(connection: InsertTelegramConnection): Promise<TelegramConnectionType>;
   deleteTelegramConnection(id: string): Promise<void>;
   
-  // Order operations
-  createOrder(order: InsertOrder): Promise<Order>;
-  getOrdersByUser(userId: string): Promise<Order[]>;
-  getRecentOrdersByUser(userId: string, limit: number): Promise<Order[]>;
-  updateOrderStatus(orderId: string, status: string, groupsCreated?: number, errorMessage?: string): Promise<Order>;
+  createOrder(order: InsertOrder): Promise<OrderType>;
+  getOrdersByUser(userId: string): Promise<OrderType[]>;
+  getRecentOrdersByUser(userId: string, limit: number): Promise<OrderType[]>;
+  updateOrderStatus(orderId: string, status: string, groupsCreated?: number, errorMessage?: string): Promise<OrderType>;
   
-  // Group operations
-  createGroup(group: { orderId: string; userId: string; groupName: string; telegramGroupId?: string; inviteLink?: string }): Promise<Group>;
-  getGroupsByOrder(orderId: string): Promise<Group[]>;
+  createGroup(group: { orderId: string; userId: string; groupName: string; telegramGroupId?: string; inviteLink?: string }): Promise<GroupType>;
+  getGroupsByOrder(orderId: string): Promise<GroupType[]>;
   
-  // Transaction operations
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  getTransactionsByUser(userId: string): Promise<Transaction[]>;
-  getAllTransactions(): Promise<Transaction[]>;
-  updateTransactionStatus(id: string, status: string, txHash?: string): Promise<Transaction>;
+  createTransaction(transaction: InsertTransaction): Promise<TransactionType>;
+  getTransactionsByUser(userId: string): Promise<TransactionType[]>;
+  getAllTransactions(): Promise<TransactionType[]>;
+  updateTransactionStatus(id: string, status: string, txHash?: string): Promise<TransactionType>;
   
-  // Payment settings operations
-  getPaymentSettings(): Promise<PaymentSetting | undefined>;
-  updatePaymentSettings(settings: InsertPaymentSetting): Promise<PaymentSetting>;
+  getPaymentSettings(): Promise<PaymentSettingType | undefined>;
+  updatePaymentSettings(settings: InsertPaymentSetting): Promise<PaymentSettingType>;
   
-  // Wallet address operations
-  getWalletAddresses(): Promise<WalletAddress[]>;
-  getActiveWalletAddresses(): Promise<WalletAddress[]>;
-  createWalletAddress(wallet: InsertWalletAddress): Promise<WalletAddress>;
-  updateWalletAddress(id: string, wallet: Partial<InsertWalletAddress>): Promise<WalletAddress>;
+  getWalletAddresses(): Promise<WalletAddressType[]>;
+  getActiveWalletAddresses(): Promise<WalletAddressType[]>;
+  createWalletAddress(wallet: InsertWalletAddress): Promise<WalletAddressType>;
+  updateWalletAddress(id: string, wallet: Partial<InsertWalletAddress>): Promise<WalletAddressType>;
   deleteWalletAddress(id: string): Promise<void>;
   
-  // Auto message operations
-  createAutoMessage(groupId: string, message: string): Promise<AutoMessage>;
-  getAutoMessagesByGroup(groupId: string): Promise<AutoMessage[]>;
+  createAutoMessage(groupId: string, message: string): Promise<AutoMessageType>;
+  getAutoMessagesByGroup(groupId: string): Promise<AutoMessageType[]>;
   
-  // Admin balance operations
-  adminAddBalance(userId: string, amount: string): Promise<User>;
-  adminApprovePayment(transactionId: string): Promise<Transaction>;
+  adminAddBalance(userId: string, amount: number): Promise<UserType>;
+  adminApprovePayment(transactionId: string): Promise<TransactionType>;
   
-  // Stats operations
   getUserStats(userId: string): Promise<{
-    balance: string;
+    balance: number;
     totalGroups: number;
     activeOrders: number;
     completedOrders: number;
@@ -87,137 +79,89 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
-  // User operations
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    if (user) {
-      const { password, ...userWithoutPassword } = user;
-      return userWithoutPassword as User;
-    }
-    return undefined;
+  async getUser(id: string): Promise<UserType | undefined> {
+    const user = await User.findById(id).select('-password').lean();
+    return user ? convertToId(user) as UserType : undefined;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    if (user) {
-      const { password, ...userWithoutPassword } = user;
-      return userWithoutPassword as User;
-    }
-    return undefined;
+  async getUserByUsername(username: string): Promise<UserType | undefined> {
+    const user = await User.findOne({ username }).select('-password').lean();
+    return user ? convertToId(user) as UserType : undefined;
   }
 
-  async createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<User> {
+  async createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<UserType> {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const [user] = await db
-      .insert(users)
-      .values({
-        username,
-        password: hashedPassword,
-        email,
-        firstName,
-        lastName,
-      })
-      .returning();
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword as User;
+    const user = await User.create({
+      username,
+      password: hashedPassword,
+      email,
+      firstName,
+      lastName,
+    });
+    const { password: _, ...userWithoutPassword } = user.toObject();
+    return convertToId(userWithoutPassword) as UserType;
   }
 
   async verifyPassword(userId: string, password: string): Promise<boolean> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    const user = await User.findById(userId);
     if (!user) return false;
     return await bcrypt.compare(password, user.password);
   }
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword as User;
+  async getAllUsers(): Promise<UserType[]> {
+    const users = await User.find().select('-password').lean();
+    return users.map(u => convertToId(u)) as UserType[];
   }
 
-  async getAllUsers(): Promise<User[]> {
-    return await db.select().from(users);
+  async updateUserBalance(userId: string, amount: number): Promise<UserType> {
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { $inc: { balance: amount }, updatedAt: new Date() },
+      { new: true }
+    ).select('-password');
+    if (!user) throw new Error('User not found');
+    return convertToId(user.toObject()) as UserType;
   }
 
-  async updateUserBalance(userId: string, amount: string): Promise<User> {
-    const [user] = await db
-      .update(users)
-      .set({ 
-        balance: sql`${users.balance} + ${amount}`,
-        updatedAt: new Date() 
-      })
-      .where(eq(users.id, userId))
-      .returning();
-    return user;
+  async getTelegramConnections(userId: string): Promise<TelegramConnectionType[]> {
+    const connections = await TelegramConnection.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+    return connections.map(c => convertToId(c)) as TelegramConnectionType[];
   }
 
-  // Telegram connection operations
-  async getTelegramConnections(userId: string): Promise<TelegramConnection[]> {
-    return await db
-      .select()
-      .from(telegramConnections)
-      .where(eq(telegramConnections.userId, userId))
-      .orderBy(desc(telegramConnections.createdAt));
+  async getActiveTelegramConnection(userId: string): Promise<TelegramConnectionType | undefined> {
+    const connection = await TelegramConnection.findOne({ userId, isActive: true }).lean();
+    return connection ? convertToId(connection) as TelegramConnectionType : undefined;
   }
 
-  async getActiveTelegramConnection(userId: string): Promise<TelegramConnection | undefined> {
-    const [connection] = await db
-      .select()
-      .from(telegramConnections)
-      .where(
-        and(
-          eq(telegramConnections.userId, userId),
-          eq(telegramConnections.isActive, true)
-        )
-      );
-    return connection;
-  }
-
-  async createTelegramConnection(connectionData: InsertTelegramConnection): Promise<TelegramConnection> {
-    const [connection] = await db
-      .insert(telegramConnections)
-      .values(connectionData)
-      .returning();
-    return connection;
+  async createTelegramConnection(connectionData: InsertTelegramConnection): Promise<TelegramConnectionType> {
+    const connection = await TelegramConnection.create(connectionData);
+    return convertToId(connection.toObject()) as TelegramConnectionType;
   }
 
   async deleteTelegramConnection(id: string): Promise<void> {
-    await db.delete(telegramConnections).where(eq(telegramConnections.id, id));
+    await TelegramConnection.findByIdAndDelete(id);
   }
 
-  // Order operations
-  async createOrder(orderData: InsertOrder): Promise<Order> {
-    const [order] = await db
-      .insert(orders)
-      .values(orderData)
-      .returning();
-    return order;
+  async createOrder(orderData: InsertOrder): Promise<OrderType> {
+    const order = await Order.create(orderData);
+    return convertToId(order.toObject()) as OrderType;
   }
 
-  async getOrdersByUser(userId: string): Promise<Order[]> {
-    return await db
-      .select()
-      .from(orders)
-      .where(eq(orders.userId, userId))
-      .orderBy(desc(orders.createdAt));
+  async getOrdersByUser(userId: string): Promise<OrderType[]> {
+    const orders = await Order.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+    return orders.map(o => convertToId(o)) as OrderType[];
   }
 
-  async getRecentOrdersByUser(userId: string, limit: number = 5): Promise<Order[]> {
-    return await db
-      .select()
-      .from(orders)
-      .where(eq(orders.userId, userId))
-      .orderBy(desc(orders.createdAt))
-      .limit(limit);
+  async getRecentOrdersByUser(userId: string, limit: number = 5): Promise<OrderType[]> {
+    const orders = await Order.find({ userId })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return orders.map(o => convertToId(o)) as OrderType[];
   }
 
   async updateOrderStatus(
@@ -225,178 +169,143 @@ export class DatabaseStorage implements IStorage {
     status: string,
     groupsCreated?: number,
     errorMessage?: string
-  ): Promise<Order> {
-    const updateData: any = {
-      status,
-      ...(groupsCreated !== undefined && { groupsCreated }),
-      ...(errorMessage && { errorMessage }),
-    };
+  ): Promise<OrderType> {
+    const updateData: any = { status };
+    
+    if (groupsCreated !== undefined) {
+      updateData.groupsCreated = groupsCreated;
+    }
+    
+    if (errorMessage) {
+      updateData.errorMessage = errorMessage;
+    }
 
     if (status === 'completed') {
       updateData.completedAt = new Date();
     }
 
-    const [order] = await db
-      .update(orders)
-      .set(updateData)
-      .where(eq(orders.id, orderId))
-      .returning();
-    return order;
+    const order = await Order.findByIdAndUpdate(orderId, updateData, { new: true });
+    if (!order) throw new Error('Order not found');
+    return convertToId(order.toObject()) as OrderType;
   }
 
-  // Group operations
   async createGroup(groupData: {
     orderId: string;
     userId: string;
     groupName: string;
     telegramGroupId?: string;
     inviteLink?: string;
-  }): Promise<Group> {
-    const [group] = await db
-      .insert(groups)
-      .values(groupData)
-      .returning();
-    return group;
+  }): Promise<GroupType> {
+    const group = await Group.create(groupData);
+    return convertToId(group.toObject()) as GroupType;
   }
 
-  async getGroupsByOrder(orderId: string): Promise<Group[]> {
-    return await db
-      .select()
-      .from(groups)
-      .where(eq(groups.orderId, orderId));
+  async getGroupsByOrder(orderId: string): Promise<GroupType[]> {
+    const groups = await Group.find({ orderId }).lean();
+    return groups.map(g => convertToId(g)) as GroupType[];
   }
 
-  // Transaction operations
-  async createTransaction(transactionData: InsertTransaction): Promise<Transaction> {
-    const [transaction] = await db
-      .insert(transactions)
-      .values(transactionData)
-      .returning();
-    return transaction;
+  async createTransaction(transactionData: InsertTransaction): Promise<TransactionType> {
+    const transaction = await Transaction.create(transactionData);
+    return convertToId(transaction.toObject()) as TransactionType;
   }
 
-  async getTransactionsByUser(userId: string): Promise<Transaction[]> {
-    return await db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.userId, userId))
-      .orderBy(desc(transactions.createdAt));
+  async getTransactionsByUser(userId: string): Promise<TransactionType[]> {
+    const transactions = await Transaction.find({ userId })
+      .sort({ createdAt: -1 })
+      .lean();
+    return transactions.map(t => convertToId(t)) as TransactionType[];
   }
 
-  async getAllTransactions(): Promise<Transaction[]> {
-    return await db
-      .select()
-      .from(transactions)
-      .orderBy(desc(transactions.createdAt))
-      .limit(100);
+  async getAllTransactions(): Promise<TransactionType[]> {
+    const transactions = await Transaction.find()
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    return transactions.map(t => convertToId(t)) as TransactionType[];
   }
 
-  async updateTransactionStatus(id: string, status: string, txHash?: string): Promise<Transaction> {
-    const [transaction] = await db
-      .update(transactions)
-      .set({
-        status,
-        ...(txHash && { txHash }),
-      })
-      .where(eq(transactions.id, id))
-      .returning();
-    return transaction;
+  async updateTransactionStatus(id: string, status: string, txHash?: string): Promise<TransactionType> {
+    const updateData: any = { status };
+    if (txHash) {
+      updateData.txHash = txHash;
+    }
+    
+    const transaction = await Transaction.findByIdAndUpdate(id, updateData, { new: true });
+    if (!transaction) throw new Error('Transaction not found');
+    return convertToId(transaction.toObject()) as TransactionType;
   }
 
-  // Payment settings operations
-  async getPaymentSettings(): Promise<PaymentSetting | undefined> {
-    const [setting] = await db
-      .select()
-      .from(paymentSettings)
-      .limit(1);
-    return setting;
+  async getPaymentSettings(): Promise<PaymentSettingType | undefined> {
+    const setting = await PaymentSetting.findOne().lean();
+    return setting ? convertToId(setting) as PaymentSettingType : undefined;
   }
 
-  async updatePaymentSettings(settingsData: InsertPaymentSetting): Promise<PaymentSetting> {
+  async updatePaymentSettings(settingsData: InsertPaymentSetting): Promise<PaymentSettingType> {
     const existing = await this.getPaymentSettings();
     
     if (existing) {
-      const [updated] = await db
-        .update(paymentSettings)
-        .set({ ...settingsData, updatedAt: new Date() })
-        .where(eq(paymentSettings.id, existing.id))
-        .returning();
-      return updated;
+      const updated = await PaymentSetting.findByIdAndUpdate(
+        existing.id,
+        { ...settingsData, updatedAt: new Date() },
+        { new: true }
+      );
+      if (!updated) throw new Error('Failed to update payment settings');
+      return convertToId(updated.toObject()) as PaymentSettingType;
     } else {
-      const [created] = await db
-        .insert(paymentSettings)
-        .values(settingsData)
-        .returning();
-      return created;
+      const created = await PaymentSetting.create(settingsData);
+      return convertToId(created.toObject()) as PaymentSettingType;
     }
   }
 
-  // Wallet address operations
-  async getWalletAddresses(): Promise<WalletAddress[]> {
-    return await db
-      .select()
-      .from(walletAddresses)
-      .orderBy(desc(walletAddresses.createdAt));
+  async getWalletAddresses(): Promise<WalletAddressType[]> {
+    const wallets = await WalletAddress.find()
+      .sort({ createdAt: -1 })
+      .lean();
+    return wallets.map(w => convertToId(w)) as WalletAddressType[];
   }
 
-  async getActiveWalletAddresses(): Promise<WalletAddress[]> {
-    return await db
-      .select()
-      .from(walletAddresses)
-      .where(eq(walletAddresses.isActive, true))
-      .orderBy(desc(walletAddresses.createdAt));
+  async getActiveWalletAddresses(): Promise<WalletAddressType[]> {
+    const wallets = await WalletAddress.find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .lean();
+    return wallets.map(w => convertToId(w)) as WalletAddressType[];
   }
 
-  async createWalletAddress(walletData: InsertWalletAddress): Promise<WalletAddress> {
-    const [wallet] = await db
-      .insert(walletAddresses)
-      .values(walletData)
-      .returning();
-    return wallet;
+  async createWalletAddress(walletData: InsertWalletAddress): Promise<WalletAddressType> {
+    const wallet = await WalletAddress.create(walletData);
+    return convertToId(wallet.toObject()) as WalletAddressType;
   }
 
-  async updateWalletAddress(id: string, walletData: Partial<InsertWalletAddress>): Promise<WalletAddress> {
-    const [wallet] = await db
-      .update(walletAddresses)
-      .set({ ...walletData, updatedAt: new Date() })
-      .where(eq(walletAddresses.id, id))
-      .returning();
-    return wallet;
+  async updateWalletAddress(id: string, walletData: Partial<InsertWalletAddress>): Promise<WalletAddressType> {
+    const wallet = await WalletAddress.findByIdAndUpdate(
+      id,
+      { ...walletData, updatedAt: new Date() },
+      { new: true }
+    );
+    if (!wallet) throw new Error('Wallet address not found');
+    return convertToId(wallet.toObject()) as WalletAddressType;
   }
 
   async deleteWalletAddress(id: string): Promise<void> {
-    await db.delete(walletAddresses).where(eq(walletAddresses.id, id));
+    await WalletAddress.findByIdAndDelete(id);
   }
 
-  // Auto message operations
-  async createAutoMessage(groupId: string, message: string): Promise<AutoMessage> {
-    const [autoMessage] = await db
-      .insert(autoMessages)
-      .values({ groupId, message })
-      .returning();
-    return autoMessage;
+  async createAutoMessage(groupId: string, message: string): Promise<AutoMessageType> {
+    const autoMessage = await AutoMessage.create({ groupId, message });
+    return convertToId(autoMessage.toObject()) as AutoMessageType;
   }
 
-  async getAutoMessagesByGroup(groupId: string): Promise<AutoMessage[]> {
-    return await db
-      .select()
-      .from(autoMessages)
-      .where(eq(autoMessages.groupId, groupId))
-      .orderBy(desc(autoMessages.sentAt));
+  async getAutoMessagesByGroup(groupId: string): Promise<AutoMessageType[]> {
+    const messages = await AutoMessage.find({ groupId })
+      .sort({ sentAt: -1 })
+      .lean();
+    return messages.map(m => convertToId(m)) as AutoMessageType[];
   }
 
-  // Admin balance operations
-  async adminAddBalance(userId: string, amount: string): Promise<User> {
-    const [user] = await db
-      .update(users)
-      .set({ 
-        balance: sql`${users.balance} + ${amount}`,
-        updatedAt: new Date() 
-      })
-      .where(eq(users.id, userId))
-      .returning();
+  async adminAddBalance(userId: string, amount: number): Promise<UserType> {
+    const user = await this.updateUserBalance(userId, amount);
     
-    // Create transaction record
     await this.createTransaction({
       userId,
       type: 'credit',
@@ -408,43 +317,31 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async adminApprovePayment(transactionId: string): Promise<Transaction> {
-    const transaction = await db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.id, transactionId))
-      .limit(1)
-      .then(rows => rows[0]);
+  async adminApprovePayment(transactionId: string): Promise<TransactionType> {
+    const transaction = await Transaction.findById(transactionId);
     
     if (!transaction) {
       throw new Error('Transaction not found');
     }
 
     if (transaction.type === 'credit' && transaction.status === 'pending') {
-      await this.updateUserBalance(transaction.userId, transaction.amount);
+      await this.updateUserBalance(transaction.userId.toString(), transaction.amount);
     }
 
     return await this.updateTransactionStatus(transactionId, 'completed');
   }
 
-  // Stats operations
   async getUserStats(userId: string): Promise<{
-    balance: string;
+    balance: number;
     totalGroups: number;
     activeOrders: number;
     completedOrders: number;
   }> {
-    const user = await this.getUser(userId);
+    const user = await User.findById(userId);
     
-    const userOrders = await db
-      .select()
-      .from(orders)
-      .where(eq(orders.userId, userId));
-
-    const totalGroupsCreated = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(groups)
-      .where(eq(groups.userId, userId));
+    const userOrders = await Order.find({ userId });
+    
+    const totalGroups = await Group.countDocuments({ userId });
 
     const activeOrdersCount = userOrders.filter(
       o => o.status === 'pending' || o.status === 'processing'
@@ -455,8 +352,8 @@ export class DatabaseStorage implements IStorage {
     ).length;
 
     return {
-      balance: user?.balance || '0.00',
-      totalGroups: totalGroupsCreated[0]?.count || 0,
+      balance: user?.balance || 0,
+      totalGroups,
       activeOrders: activeOrdersCount,
       completedOrders: completedOrdersCount,
     };

@@ -1,5 +1,5 @@
 import session from "express-session";
-import connectPg from "connect-pg-simple";
+import MongoStore from "connect-mongo";
 import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import { loginSchema, registerSchema } from "@shared/schema";
@@ -9,18 +9,22 @@ if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET environment variable is required");
 }
 
+const MONGODB_URL = process.env.MONGODB_URL || process.env.DATABASE_URL;
+
+if (!MONGODB_URL) {
+  throw new Error("MONGODB_URL or DATABASE_URL environment variable is required");
+}
+
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
-  const pgStore = connectPg(session);
-  const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
-    createTableIfMissing: true,
-    ttl: sessionTtl,
-    tableName: "sessions",
-  });
+  
   return session({
     secret: process.env.SESSION_SECRET!,
-    store: sessionStore,
+    store: MongoStore.create({
+      mongoUrl: MONGODB_URL,
+      ttl: sessionTtl / 1000,
+      touchAfter: 24 * 3600,
+    }),
     resave: false,
     saveUninitialized: false,
     cookie: {
@@ -103,6 +107,10 @@ export async function setupAuth(app: Express) {
       }
       res.json({ message: "Logged out successfully" });
     });
+  });
+
+  app.get("/api/auth/user", isAuthenticated, (req, res) => {
+    res.json({ user: (req as any).user });
   });
 }
 
