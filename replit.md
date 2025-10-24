@@ -42,32 +42,35 @@ Preferred communication style: Simple, everyday language.
 - `/api/stats` - Dashboard statistics
 - `/api/admin/*` - Administrative functions
 
-**Session Management**: Express-session with PostgreSQL session store (connect-pg-simple) for persistent, secure session handling. Sessions expire after 7 days and use secure, HTTP-only cookies.
+**Session Management**: Express-session with MongoDB session store (connect-mongo) for persistent, secure session handling. Sessions expire after 7 days and use secure, HTTP-only cookies.
 
 **Authentication Strategy**: Username/password authentication with bcrypt for password hashing. Role-based access control differentiates regular users from administrators. Middleware functions (`isAuthenticated`, `isAdmin`) protect routes requiring authentication or admin privileges.
 
 **Database Layer**: 
-- Drizzle ORM for type-safe database operations
-- Schema-first approach with TypeScript types generated from database schema
+- Mongoose ODM for type-safe MongoDB operations
+- Schema-first approach with TypeScript types and interfaces
 - Centralized storage layer (`storage.ts`) providing abstraction over direct database calls
+- Type conversion between MongoDB's `_id` and application's `id` field for consistency
 
 ### Data Storage
 
-**Database**: PostgreSQL (via Neon serverless PostgreSQL with WebSocket support for connection pooling).
+**Database**: MongoDB (via Mongoose ODM for schema modeling and data validation).
 
 **Schema Design**:
 - `users` - User accounts with balance tracking, admin flags, profile information
-- `sessions` - Express session storage
-- `telegram_connections` - User's connected Telegram accounts with API credentials
+- `sessions` - Express session storage (managed by connect-mongo)
+- `telegramconnections` - User's connected Telegram accounts with API credentials
 - `orders` - Group creation orders with status tracking and metadata
 - `groups` - Individual groups created from orders, with Telegram group IDs and invite links
 - `transactions` - Financial transactions for balance credits/debits
-- `payment_settings` - Cryptocurrency payment configurations (wallet addresses, pricing)
+- `walletaddresses` - Cryptocurrency wallet addresses for payments
+- `paymentsettings` - System-wide payment configuration (pricing, limits)
+- `automessages` - Auto-sent messages to groups
 
 **Data Relationships**:
-- Users have many Telegram connections, orders, and transactions
-- Orders have many groups
-- One-to-many relationships enforced through foreign keys
+- Users have many Telegram connections, orders, and transactions (referenced via userId)
+- Orders have many groups (referenced via orderId)
+- One-to-many relationships enforced through ObjectId references
 
 ### External Dependencies
 
@@ -112,7 +115,7 @@ Preferred communication style: Simple, everyday language.
 - Password hashing with bcrypt
 - Secure session cookies (httpOnly, secure, sameSite)
 - CSRF protection through session configuration
-- Environment variable protection for secrets (SESSION_SECRET, DATABASE_URL)
+- Environment variable protection for secrets (SESSION_SECRET, MONGODB_URL)
 - Proxy trust configuration for deployment behind reverse proxies
 
-**Scalability Approach**: Serverless PostgreSQL with connection pooling, stateless session storage, and potential for horizontal scaling of the Express application.
+**Scalability Approach**: MongoDB with connection pooling, stateless session storage, and potential for horizontal scaling of the Express application.
