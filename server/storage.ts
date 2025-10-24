@@ -81,12 +81,12 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<UserType | undefined> {
     const user = await User.findById(id).select('-password').lean();
-    return user ? convertToId(user) as UserType : undefined;
+    return user ? convertToId(user as any) as UserType : undefined;
   }
 
   async getUserByUsername(username: string): Promise<UserType | undefined> {
     const user = await User.findOne({ username }).select('-password').lean();
-    return user ? convertToId(user) as UserType : undefined;
+    return user ? convertToId(user as any) as UserType : undefined;
   }
 
   async createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<UserType> {
@@ -110,7 +110,7 @@ export class DatabaseStorage implements IStorage {
 
   async getAllUsers(): Promise<UserType[]> {
     const users = await User.find().select('-password').lean();
-    return users.map(u => convertToId(u)) as UserType[];
+    return users.map(u => convertToId(u as any)) as UserType[];
   }
 
   async updateUserBalance(userId: string, amount: number): Promise<UserType> {
@@ -132,7 +132,7 @@ export class DatabaseStorage implements IStorage {
 
   async getActiveTelegramConnection(userId: string): Promise<TelegramConnectionType | undefined> {
     const connection = await TelegramConnection.findOne({ userId, isActive: true }).lean();
-    return connection ? convertToId(connection) as TelegramConnectionType : undefined;
+    return connection ? convertToId(connection as any) as TelegramConnectionType : undefined;
   }
 
   async createTelegramConnection(connectionData: InsertTelegramConnection): Promise<TelegramConnectionType> {
@@ -238,7 +238,7 @@ export class DatabaseStorage implements IStorage {
 
   async getPaymentSettings(): Promise<PaymentSettingType | undefined> {
     const setting = await PaymentSetting.findOne().lean();
-    return setting ? convertToId(setting) as PaymentSettingType : undefined;
+    return setting ? convertToId(setting as any) as PaymentSettingType : undefined;
   }
 
   async updatePaymentSettings(settingsData: InsertPaymentSetting): Promise<PaymentSettingType> {

@@ -108,7 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
 
-      const balance = parseFloat(user.balance);
+      const balance = user.balance;
       const orderCost = parseFloat(cost);
 
       if (balance < orderCost) {
@@ -122,13 +122,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Deduct balance
-      await storage.updateUserBalance(userId, `-${orderCost}`);
+      await storage.updateUserBalance(userId, -orderCost);
 
       // Create debit transaction
       await storage.createTransaction({
         userId,
         type: 'debit',
-        amount: cost,
+        amount: orderCost,
         description: `Group creation order - ${groupCount} groups`,
         status: 'completed',
       });
@@ -137,7 +137,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const order = await storage.createOrder({
         userId,
         groupCount,
-        cost,
+        cost: orderCost,
         groupNamePattern: groupNamePattern || 'Group {number}',
         isPrivate: isPrivate || false,
       });
@@ -413,7 +413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create pending transaction - actual balance update happens on confirmation
       const transaction = await storage.createTransaction({
         userId,
-        amount,
+        amount: parseFloat(amount),
         type,
         description,
         walletAddressId,
@@ -469,7 +469,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const setting = await storage.updatePaymentSettings(validationResult.data);
+      const { pricePerHundredGroups, maxGroupsPerOrder } = validationResult.data;
+      const setting = await storage.updatePaymentSettings({
+        pricePerHundredGroups: parseFloat(pricePerHundredGroups),
+        maxGroupsPerOrder,
+      });
       res.json(setting);
     } catch (error) {
       console.error("Error updating payment settings:", error);
@@ -546,7 +550,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { userId, amount } = validationResult.data;
-      const user = await storage.adminAddBalance(userId, amount);
+      const user = await storage.adminAddBalance(userId, parseFloat(amount));
       res.json(user);
     } catch (error) {
       console.error("Error adding balance:", error);
@@ -596,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transaction = await storage.updateTransactionStatus(transactionId, 'completed', txHash);
       
       if (transaction.type === 'credit') {
-        await storage.updateUserBalance(transaction.userId, transaction.amount);
+        await storage.updateUserBalance(transaction.userId.toString(), transaction.amount);
       }
 
       res.json({ success: true });
