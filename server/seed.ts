@@ -18,7 +18,7 @@ export async function seedAdminUser() {
         "User"
       );
       
-      await User.findByIdAndUpdate(adminUser._id, { isAdmin: true });
+      await User.findByIdAndUpdate(adminUser.id, { isAdmin: true });
       
       console.log("Admin user created successfully (username: admin, password: admin123)");
     } else {
