@@ -1,6 +1,6 @@
 import { TelegramClient } from "telegram";
-import { StringSession } from "telegram/sessions";
-import { Logger } from "telegram/extensions/Logger";
+import { StringSession } from "telegram/sessions/index.js";
+import { Logger } from "telegram/extensions/Logger.js";
 
 // Disable telegram logging
 Logger.setLevel("none");
