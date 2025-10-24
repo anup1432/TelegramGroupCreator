@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated, isAdmin } from "./auth";
 import { z } from "zod";
+import { sendTelegramOTP, verifyTelegramOTP, createTelegramGroupsWithSession, sendAutoMessages } from "./telegram";
 
 // Validation schemas
 const createOrderSchema = z.object({
@@ -248,6 +249,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     apiId: z.string(),
     apiHash: z.string(),
     phoneNumber: z.string(),
+    phoneCodeHash: z.string(),
     otp: z.string(),
   });
 
@@ -260,12 +262,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: validationResult.error.errors 
         });
       }
-      // In a real implementation, this would verify with Telegram API
-      // For now, we'll just simulate success
-      res.json({ success: true, requiresOtp: true });
-    } catch (error) {
+
+      const { apiId, apiHash, phoneNumber } = validationResult.data;
+
+      // Send OTP via Telegram
+      const result = await sendTelegramOTP({ apiId, apiHash, phoneNumber });
+      
+      res.json({ 
+        success: true, 
+        requiresOtp: true,
+        phoneCodeHash: result.phoneCodeHash 
+      });
+    } catch (error: any) {
       console.error("Error verifying credentials:", error);
-      res.status(500).json({ message: "Failed to verify credentials" });
+      res.status(500).json({ message: error.message || "Failed to send OTP" });
     }
   });
 
@@ -278,12 +288,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: validationResult.error.errors 
         });
       }
-      // In a real implementation, this would verify OTP with Telegram API
-      // For now, we'll just simulate success
-      res.json({ success: true, requiresPassword: false });
-    } catch (error) {
+
+      const { apiId, apiHash, phoneNumber, phoneCodeHash, otp } = validationResult.data;
+
+      // Verify OTP with Telegram
+      const result = await verifyTelegramOTP({ 
+        apiId, 
+        apiHash, 
+        phoneNumber, 
+        phoneCodeHash,
+        otp 
+      });
+
+      // Save connection to database
+      const userId = req.user.id;
+      const connection = await storage.createTelegramConnection({
+        userId,
+        apiId,
+        apiHash,
+        phoneNumber,
+        sessionString: result.sessionString,
+        isActive: true,
+      });
+      
+      res.json({ 
+        success: true, 
+        connection 
+      });
+    } catch (error: any) {
       console.error("Error verifying OTP:", error);
-      res.status(500).json({ message: "Failed to verify OTP" });
+      res.status(500).json({ message: error.message || "Failed to verify OTP" });
     }
   });
 

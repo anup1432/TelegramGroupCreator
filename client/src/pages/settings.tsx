@@ -29,6 +29,7 @@ export default function Settings() {
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneCodeHash, setPhoneCodeHash] = useState("");
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
 
@@ -63,37 +64,22 @@ export default function Settings() {
           apiId,
           apiHash,
           phoneNumber,
+          phoneCodeHash,
           otp,
-        });
-      } else {
-        return await apiRequest("POST", "/api/telegram/connect", {
-          apiId,
-          apiHash,
-          phoneNumber,
-          password,
         });
       }
     },
     onSuccess: (data: any) => {
-      if (step < 3) {
-        if (data.requiresPassword) {
-          setStep(3);
-        } else if (step === 1) {
-          setStep(2);
-          toast({
-            title: "OTP Sent",
-            description: "Please check your Telegram for the verification code",
-          });
-        } else {
-          queryClient.invalidateQueries({ queryKey: ["/api/telegram-connections"] });
-          setIsDialogOpen(false);
-          resetForm();
-          toast({
-            title: "Success",
-            description: "Telegram account connected successfully",
-          });
-        }
-      } else {
+      if (step === 1) {
+        // OTP sent successfully
+        setPhoneCodeHash(data.phoneCodeHash);
+        setStep(2);
+        toast({
+          title: "OTP Sent",
+          description: "Please check your Telegram for the verification code",
+        });
+      } else if (step === 2) {
+        // OTP verified and connected successfully
         queryClient.invalidateQueries({ queryKey: ["/api/telegram-connections"] });
         setIsDialogOpen(false);
         resetForm();
@@ -159,6 +145,7 @@ export default function Settings() {
     setApiId("");
     setApiHash("");
     setPhoneNumber("");
+    setPhoneCodeHash("");
     setOtp("");
     setPassword("");
   };
@@ -199,7 +186,7 @@ export default function Settings() {
               <DialogHeader>
                 <DialogTitle>Connect Telegram Account</DialogTitle>
                 <DialogDescription>
-                  Step {step} of 3 - {step === 1 ? "API Credentials" : step === 2 ? "Phone Verification" : "Two-Factor Authentication"}
+                  Step {step} of 2 - {step === 1 ? "API Credentials & Phone" : "OTP Verification"}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -270,22 +257,6 @@ export default function Settings() {
                     </p>
                   </div>
                 )}
-                {step === 3 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Two-Factor Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Enter your 2FA password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      data-testid="input-2fa-password"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Enter your cloud password if you have 2FA enabled
-                    </p>
-                  </div>
-                )}
               </div>
               <DialogFooter>
                 <Button
@@ -297,12 +268,12 @@ export default function Settings() {
                   {connectMutation.isPending ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Verifying...
+                      {step === 1 ? "Sending OTP..." : "Verifying..."}
                     </>
-                  ) : step === 3 ? (
+                  ) : step === 2 ? (
                     "Connect Account"
                   ) : (
-                    "Next Step"
+                    "Send OTP"
                   )}
                 </Button>
               </DialogFooter>
