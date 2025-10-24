@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated, isAdmin } from "./replitAuth";
+import { setupAuth, isAuthenticated, isAdmin } from "./auth";
 import { z } from "zod";
 
 // Validation schemas
@@ -40,12 +40,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
-      res.json(user);
+      res.json(req.user);
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -55,7 +50,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Stats endpoint
   app.get('/api/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const stats = await storage.getUserStats(userId);
       res.json(stats);
     } catch (error) {
@@ -67,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Orders endpoints
   app.post('/api/orders', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Validate input
       const validationResult = createOrderSchema.safeParse(req.body);
@@ -158,7 +153,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/orders', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const orders = await storage.getOrdersByUser(userId);
       res.json(orders);
     } catch (error) {
@@ -169,7 +164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/orders/recent', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const orders = await storage.getRecentOrdersByUser(userId, 5);
       res.json(orders);
     } catch (error) {
@@ -181,7 +176,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Telegram connection endpoints
   app.get('/api/telegram-connections', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const connections = await storage.getTelegramConnections(userId);
       res.json(connections);
     } catch (error) {
@@ -241,7 +236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/telegram/connect', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Validate input
       const validationResult = telegramConnectSchema.safeParse(req.body);
@@ -275,7 +270,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/telegram-connections/:id', isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Verify ownership
       const connections = await storage.getTelegramConnections(userId);
@@ -305,7 +300,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Transaction endpoints
   app.post('/api/transactions', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       // Validate input
       const validationResult = createTransactionSchema.safeParse(req.body);
@@ -336,7 +331,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get('/api/transactions', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const transactions = await storage.getTransactionsByUser(userId);
       res.json(transactions);
     } catch (error) {

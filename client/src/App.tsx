@@ -9,6 +9,8 @@ import { TopNav } from "@/components/top-nav";
 import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
+import Login from "@/pages/login";
+import Register from "@/pages/register";
 import Dashboard from "@/pages/dashboard";
 import CreateGroups from "@/pages/create-groups";
 import Orders from "@/pages/orders";
@@ -25,7 +27,11 @@ function Router({ isAuthenticated, isLoading }: RouterProps) {
   return (
     <Switch>
       {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
+        <>
+          <Route path="/" component={Landing} />
+          <Route path="/login" component={Login} />
+          <Route path="/register" component={Register} />
+        </>
       ) : (
         <>
           <Route path="/" component={Dashboard} />

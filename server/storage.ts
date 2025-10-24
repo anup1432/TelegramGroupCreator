@@ -19,13 +19,17 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserBalance(userId: string, amount: string): Promise<User>;
+  verifyPassword(userId: string, password: string): Promise<boolean>;
   
   // Telegram connection operations
   getTelegramConnections(userId: string): Promise<TelegramConnection[]>;
@@ -67,7 +71,42 @@ export class DatabaseStorage implements IStorage {
   // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+    if (user) {
+      const { password, ...userWithoutPassword } = user;
+      return userWithoutPassword as User;
+    }
+    return undefined;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    if (user) {
+      const { password, ...userWithoutPassword } = user;
+      return userWithoutPassword as User;
+    }
+    return undefined;
+  }
+
+  async createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<User> {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [user] = await db
+      .insert(users)
+      .values({
+        username,
+        password: hashedPassword,
+        email,
+        firstName,
+        lastName,
+      })
+      .returning();
+    const { password: _, ...userWithoutPassword } = user;
+    return userWithoutPassword as User;
+  }
+
+  async verifyPassword(userId: string, password: string): Promise<boolean> {
+    const [user] = await db.select().from(users).where(eq(users.id, userId));
+    if (!user) return false;
+    return await bcrypt.compare(password, user.password);
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
@@ -82,7 +121,8 @@ export class DatabaseStorage implements IStorage {
         },
       })
       .returning();
-    return user;
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword as User;
   }
 
   async getAllUsers(): Promise<User[]> {

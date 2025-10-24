@@ -14,7 +14,7 @@ export default function Landing() {
             <span className="text-lg font-semibold">TeleGroup</span>
           </div>
           <Button asChild data-testid="button-login">
-            <a href="/api/login">Login</a>
+            <a href="/login">Login</a>
           </Button>
         </div>
       </header>
@@ -33,7 +33,7 @@ export default function Landing() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" asChild className="h-12" data-testid="button-get-started">
-              <a href="/api/login">Get Started</a>
+              <a href="/register">Get Started</a>
             </Button>
             <Button size="lg" variant="outline" className="h-12" data-testid="button-learn-more">
               Learn More
