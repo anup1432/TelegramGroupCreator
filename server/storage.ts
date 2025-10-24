@@ -5,6 +5,8 @@ import {
   groups,
   transactions,
   paymentSettings,
+  walletAddresses,
+  autoMessages,
   type User,
   type UpsertUser,
   type TelegramConnection,
@@ -16,6 +18,9 @@ import {
   type InsertTransaction,
   type PaymentSetting,
   type InsertPaymentSetting,
+  type WalletAddress,
+  type InsertWalletAddress,
+  type AutoMessage,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -54,9 +59,23 @@ export interface IStorage {
   updateTransactionStatus(id: string, status: string, txHash?: string): Promise<Transaction>;
   
   // Payment settings operations
-  getPaymentSettings(): Promise<PaymentSetting[]>;
-  getActivePaymentSetting(): Promise<PaymentSetting | undefined>;
-  createPaymentSetting(setting: InsertPaymentSetting): Promise<PaymentSetting>;
+  getPaymentSettings(): Promise<PaymentSetting | undefined>;
+  updatePaymentSettings(settings: InsertPaymentSetting): Promise<PaymentSetting>;
+  
+  // Wallet address operations
+  getWalletAddresses(): Promise<WalletAddress[]>;
+  getActiveWalletAddresses(): Promise<WalletAddress[]>;
+  createWalletAddress(wallet: InsertWalletAddress): Promise<WalletAddress>;
+  updateWalletAddress(id: string, wallet: Partial<InsertWalletAddress>): Promise<WalletAddress>;
+  deleteWalletAddress(id: string): Promise<void>;
+  
+  // Auto message operations
+  createAutoMessage(groupId: string, message: string): Promise<AutoMessage>;
+  getAutoMessagesByGroup(groupId: string): Promise<AutoMessage[]>;
+  
+  // Admin balance operations
+  adminAddBalance(userId: string, amount: string): Promise<User>;
+  adminApprovePayment(transactionId: string): Promise<Transaction>;
   
   // Stats operations
   getUserStats(userId: string): Promise<{
@@ -285,33 +304,127 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Payment settings operations
-  async getPaymentSettings(): Promise<PaymentSetting[]> {
+  async getPaymentSettings(): Promise<PaymentSetting | undefined> {
+    const [setting] = await db
+      .select()
+      .from(paymentSettings)
+      .limit(1);
+    return setting;
+  }
+
+  async updatePaymentSettings(settingsData: InsertPaymentSetting): Promise<PaymentSetting> {
+    const existing = await this.getPaymentSettings();
+    
+    if (existing) {
+      const [updated] = await db
+        .update(paymentSettings)
+        .set({ ...settingsData, updatedAt: new Date() })
+        .where(eq(paymentSettings.id, existing.id))
+        .returning();
+      return updated;
+    } else {
+      const [created] = await db
+        .insert(paymentSettings)
+        .values(settingsData)
+        .returning();
+      return created;
+    }
+  }
+
+  // Wallet address operations
+  async getWalletAddresses(): Promise<WalletAddress[]> {
     return await db
       .select()
-      .from(paymentSettings)
-      .orderBy(desc(paymentSettings.createdAt));
+      .from(walletAddresses)
+      .orderBy(desc(walletAddresses.createdAt));
   }
 
-  async getActivePaymentSetting(): Promise<PaymentSetting | undefined> {
-    const [setting] = await db
+  async getActiveWalletAddresses(): Promise<WalletAddress[]> {
+    return await db
       .select()
-      .from(paymentSettings)
-      .where(eq(paymentSettings.isActive, true));
-    return setting;
+      .from(walletAddresses)
+      .where(eq(walletAddresses.isActive, true))
+      .orderBy(desc(walletAddresses.createdAt));
   }
 
-  async createPaymentSetting(settingData: InsertPaymentSetting): Promise<PaymentSetting> {
-    // Deactivate all existing settings
-    await db
-      .update(paymentSettings)
-      .set({ isActive: false, updatedAt: new Date() });
-
-    // Create new active setting
-    const [setting] = await db
-      .insert(paymentSettings)
-      .values(settingData)
+  async createWalletAddress(walletData: InsertWalletAddress): Promise<WalletAddress> {
+    const [wallet] = await db
+      .insert(walletAddresses)
+      .values(walletData)
       .returning();
-    return setting;
+    return wallet;
+  }
+
+  async updateWalletAddress(id: string, walletData: Partial<InsertWalletAddress>): Promise<WalletAddress> {
+    const [wallet] = await db
+      .update(walletAddresses)
+      .set({ ...walletData, updatedAt: new Date() })
+      .where(eq(walletAddresses.id, id))
+      .returning();
+    return wallet;
+  }
+
+  async deleteWalletAddress(id: string): Promise<void> {
+    await db.delete(walletAddresses).where(eq(walletAddresses.id, id));
+  }
+
+  // Auto message operations
+  async createAutoMessage(groupId: string, message: string): Promise<AutoMessage> {
+    const [autoMessage] = await db
+      .insert(autoMessages)
+      .values({ groupId, message })
+      .returning();
+    return autoMessage;
+  }
+
+  async getAutoMessagesByGroup(groupId: string): Promise<AutoMessage[]> {
+    return await db
+      .select()
+      .from(autoMessages)
+      .where(eq(autoMessages.groupId, groupId))
+      .orderBy(desc(autoMessages.sentAt));
+  }
+
+  // Admin balance operations
+  async adminAddBalance(userId: string, amount: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ 
+        balance: sql`${users.balance} + ${amount}`,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    // Create transaction record
+    await this.createTransaction({
+      userId,
+      type: 'credit',
+      amount,
+      description: 'Admin balance addition',
+      status: 'completed',
+    });
+    
+    return user;
+  }
+
+  async adminApprovePayment(transactionId: string): Promise<Transaction> {
+    const transaction = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.id, transactionId))
+      .limit(1)
+      .then(rows => rows[0]);
+    
+    if (!transaction) {
+      throw new Error('Transaction not found');
+    }
+
+    if (transaction.type === 'credit' && transaction.status === 'pending') {
+      await this.updateUserBalance(transaction.userId, transaction.amount);
+    }
+
+    return await this.updateTransactionStatus(transactionId, 'completed');
   }
 
   // Stats operations

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Copy, CheckCircle, Wallet } from "lucide-react";
-import type { PaymentSetting } from "@shared/schema";
+import type { PaymentSetting, WalletAddress } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
@@ -33,12 +33,17 @@ export default function Recharge() {
     }
   }, [isAuthenticated, authLoading, toast]);
 
-  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSetting[]>({
+  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSetting>({
     queryKey: ["/api/payment-settings"],
   });
 
-  const activeSettings = paymentSettings?.find(s => s.isActive);
-  const pricePerHundred = parseFloat(activeSettings?.pricePerHundredGroups || "2.00");
+  const { data: walletAddresses, isLoading: walletsLoading } = useQuery<WalletAddress[]>({
+    queryKey: ["/api/wallet-addresses"],
+  });
+
+  const [selectedWallet, setSelectedWallet] = useState<WalletAddress | null>(null);
+
+  const pricePerHundred = parseFloat(paymentSettings?.pricePerHundredGroups || "2.00");
 
   const calculateGroups = (amount: number) => {
     return Math.floor((amount / pricePerHundred) * 100);
@@ -47,8 +52,8 @@ export default function Recharge() {
   const quickAmounts = [10, 25, 50, 100];
 
   const handleCopyAddress = () => {
-    if (activeSettings?.walletAddress) {
-      navigator.clipboard.writeText(activeSettings.walletAddress);
+    if (selectedWallet?.address) {
+      navigator.clipboard.writeText(selectedWallet.address);
       setCopied(true);
       toast({
         title: "Copied!",
@@ -58,12 +63,19 @@ export default function Recharge() {
     }
   };
 
+  useEffect(() => {
+    if (walletAddresses && walletAddresses.length > 0 && !selectedWallet) {
+      setSelectedWallet(walletAddresses[0]);
+    }
+  }, [walletAddresses, selectedWallet]);
+
   const createTransactionMutation = useMutation({
     mutationFn: async (amount: number) => {
       return await apiRequest("POST", "/api/transactions", {
         amount: amount.toString(),
         type: "credit",
-        description: `Recharge balance - ${activeSettings?.cryptoCurrency}`,
+        description: `Recharge balance - ${selectedWallet?.cryptoCurrency}`,
+        walletAddressId: selectedWallet?.id,
         status: "pending",
       });
     },
@@ -187,12 +199,12 @@ export default function Recharge() {
               <CardDescription>Send payment to the address below</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {settingsLoading ? (
+              {walletsLoading || settingsLoading ? (
                 <div className="space-y-2">
                   <div className="h-4 bg-muted animate-pulse rounded" />
                   <div className="h-12 bg-muted animate-pulse rounded" />
                 </div>
-              ) : !activeSettings ? (
+              ) : !walletAddresses || walletAddresses.length === 0 ? (
                 <div className="text-center py-8">
                   <Wallet className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground">Payment methods not configured</p>
@@ -200,35 +212,48 @@ export default function Recharge() {
               ) : (
                 <>
                   <div className="space-y-2">
-                    <Label>Cryptocurrency</Label>
-                    <Badge variant="secondary" className="text-sm">
-                      {activeSettings.cryptoCurrency}
-                    </Badge>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Wallet Address</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={activeSettings.walletAddress}
-                        readOnly
-                        className="font-mono text-sm"
-                        data-testid="input-wallet-address"
-                      />
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        onClick={handleCopyAddress}
-                        data-testid="button-copy-address"
-                      >
-                        {copied ? (
-                          <CheckCircle className="h-4 w-4" />
-                        ) : (
-                          <Copy className="h-4 w-4" />
-                        )}
-                      </Button>
+                    <Label>Select Cryptocurrency</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {walletAddresses.map((wallet) => (
+                        <Button
+                          key={wallet.id}
+                          variant={selectedWallet?.id === wallet.id ? "default" : "outline"}
+                          onClick={() => setSelectedWallet(wallet)}
+                          data-testid={`button-select-wallet-${wallet.cryptoCurrency}`}
+                        >
+                          {wallet.cryptoCurrency}
+                        </Button>
+                      ))}
                     </div>
                   </div>
+
+                  {selectedWallet && (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Wallet Address</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={selectedWallet.address}
+                            readOnly
+                            className="font-mono text-sm"
+                            data-testid="input-wallet-address"
+                          />
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            onClick={handleCopyAddress}
+                            data-testid="button-copy-address"
+                          >
+                            {copied ? (
+                              <CheckCircle className="h-4 w-4" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                   <div className="p-4 bg-primary/10 rounded-lg border-l-4 border-primary">
                     <p className="text-sm font-medium">Important</p>

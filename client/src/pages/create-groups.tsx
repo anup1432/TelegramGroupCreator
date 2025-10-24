@@ -22,7 +22,7 @@ export default function CreateGroups() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading: authLoading, user } = useAuth();
   const [, setLocation] = useLocation();
-  const [groupCount, setGroupCount] = useState(100);
+  const [groupCount, setGroupCount] = useState(10);
   const [groupNamePattern, setGroupNamePattern] = useState("Group {number}");
   const [isPrivate, setIsPrivate] = useState(false);
 
@@ -44,12 +44,12 @@ export default function CreateGroups() {
     queryKey: ["/api/telegram-connections"],
   });
 
-  const { data: paymentSettings } = useQuery<PaymentSetting[]>({
+  const { data: paymentSettings } = useQuery<PaymentSetting>({
     queryKey: ["/api/payment-settings"],
   });
 
-  const activeSettings = paymentSettings?.find(s => s.isActive);
-  const pricePerHundred = parseFloat(activeSettings?.pricePerHundredGroups || "2.00");
+  const pricePerHundred = parseFloat(paymentSettings?.pricePerHundredGroups || "2.00");
+  const maxGroupsAllowed = paymentSettings?.maxGroupsPerOrder || 10;
   const activeConnection = connections?.find(c => c.isActive);
 
   const calculateCost = () => {
@@ -174,7 +174,7 @@ export default function CreateGroups() {
               <Button
                 size="icon"
                 variant="outline"
-                onClick={() => setGroupCount(Math.max(1, groupCount - 10))}
+                onClick={() => setGroupCount(Math.max(1, groupCount - 1))}
                 disabled={groupCount <= 1}
                 data-testid="button-decrease-count"
               >
@@ -184,21 +184,22 @@ export default function CreateGroups() {
                 id="group-count"
                 type="number"
                 value={groupCount}
-                onChange={(e) => setGroupCount(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) => setGroupCount(Math.min(maxGroupsAllowed, Math.max(1, parseInt(e.target.value) || 1)))}
                 className="text-center text-2xl font-bold h-16 flex-1"
                 data-testid="input-group-count"
               />
               <Button
                 size="icon"
                 variant="outline"
-                onClick={() => setGroupCount(groupCount + 10)}
+                onClick={() => setGroupCount(Math.min(maxGroupsAllowed, groupCount + 1))}
+                disabled={groupCount >= maxGroupsAllowed}
                 data-testid="button-increase-count"
               >
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-sm text-muted-foreground text-center">
-              Use +/- buttons or type a custom number
+              Use +/- buttons or type a custom number (max {maxGroupsAllowed})
             </p>
           </div>
 

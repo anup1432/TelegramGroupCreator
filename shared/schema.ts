@@ -160,8 +160,9 @@ export const transactions = pgTable("transactions", {
   type: varchar("type", { length: 50 }).notNull(), // credit, debit
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   description: text("description").notNull(),
-  status: varchar("status", { length: 50 }).notNull().default('pending'), // pending, completed, failed
-  txHash: varchar("tx_hash"), // Crypto transaction hash
+  status: varchar("status", { length: 50 }).notNull().default('pending'), // pending, completed, failed, approved
+  txHash: varchar("tx_hash"),
+  walletAddressId: varchar("wallet_address_id").references(() => walletAddresses.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -172,6 +173,11 @@ export const transactionsRelations = relations(transactions, ({ one }) => ({
   }),
 }));
 
+// Update transactions table to include wallet address used
+export const updateTransactionWithWallet = z.object({
+  walletAddressId: z.string().optional(),
+});
+
 export const insertTransactionSchema = createInsertSchema(transactions).omit({
   id: true,
   createdAt: true,
@@ -180,13 +186,31 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 
+// Wallet addresses (admin can add multiple)
+export const walletAddresses = pgTable("wallet_addresses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  cryptoCurrency: varchar("crypto_currency", { length: 50 }).notNull(),
+  address: varchar("address").notNull(),
+  label: varchar("label"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWalletAddressSchema = createInsertSchema(walletAddresses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertWalletAddress = z.infer<typeof insertWalletAddressSchema>;
+export type WalletAddress = typeof walletAddresses.$inferSelect;
+
 // Payment settings (admin configurable)
 export const paymentSettings = pgTable("payment_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   pricePerHundredGroups: decimal("price_per_hundred_groups", { precision: 10, scale: 2 }).notNull().default('2.00'),
-  cryptoCurrency: varchar("crypto_currency", { length: 50 }).notNull().default('USDT'),
-  walletAddress: varchar("wallet_address").notNull(),
-  isActive: boolean("is_active").notNull().default(true),
+  maxGroupsPerOrder: integer("max_groups_per_order").notNull().default(10),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -199,3 +223,20 @@ export const insertPaymentSettingSchema = createInsertSchema(paymentSettings).om
 
 export type InsertPaymentSetting = z.infer<typeof insertPaymentSettingSchema>;
 export type PaymentSetting = typeof paymentSettings.$inferSelect;
+
+// Auto messages for groups
+export const autoMessages = pgTable("auto_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  groupId: varchar("group_id").notNull().references(() => groups.id, { onDelete: 'cascade' }),
+  message: text("message").notNull(),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+});
+
+export const autoMessagesRelations = relations(autoMessages, ({ one }) => ({
+  group: one(groups, {
+    fields: [autoMessages.groupId],
+    references: [groups.id],
+  }),
+}));
+
+export type AutoMessage = typeof autoMessages.$inferSelect;

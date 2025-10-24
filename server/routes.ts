@@ -16,6 +16,7 @@ const createTransactionSchema = z.object({
   amount: z.string(),
   type: z.enum(['credit', 'debit']),
   description: z.string(),
+  walletAddressId: z.string().optional(),
   status: z.enum(['pending', 'completed', 'failed']).optional(),
 });
 
@@ -27,10 +28,24 @@ const telegramConnectSchema = z.object({
 });
 
 const paymentSettingSchema = z.object({
-  cryptoCurrency: z.string(),
-  walletAddress: z.string(),
   pricePerHundredGroups: z.string(),
+  maxGroupsPerOrder: z.number().int().min(1).max(100),
+});
+
+const walletAddressSchema = z.object({
+  cryptoCurrency: z.string(),
+  address: z.string(),
+  label: z.string().optional(),
   isActive: z.boolean().optional(),
+});
+
+const adminAddBalanceSchema = z.object({
+  userId: z.string(),
+  amount: z.string(),
+});
+
+const approvePaymentSchema = z.object({
+  transactionId: z.string(),
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -64,6 +79,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.id;
       
+      // Get payment settings for max groups validation
+      const settings = await storage.getPaymentSettings();
+      const maxGroups = settings?.maxGroupsPerOrder || 10;
+      
       // Validate input
       const validationResult = createOrderSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -74,6 +93,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const { groupCount, cost, groupNamePattern, isPrivate } = validationResult.data;
+      
+      // Validate group count against max
+      if (groupCount > maxGroups) {
+        return res.status(400).json({ 
+          message: `Maximum ${maxGroups} groups allowed per order` 
+        });
+      }
 
       // Check user balance
       const user = await storage.getUser(userId);
@@ -121,15 +147,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Simulate group creation (in production, this would be an async background job)
       setTimeout(async () => {
         try {
+          // Random messages pool for auto-messaging
+          const randomMessages = [
+            "Welcome to the group!",
+            "Great to have everyone here!",
+            "Let's build something amazing together",
+            "Excited to be part of this community",
+            "Looking forward to great discussions",
+            "Hello everyone! 👋",
+            "This is going to be awesome!",
+            "Can't wait to get started",
+            "Happy to join this group",
+            "Let's make this group active and engaging",
+            "Greetings to all members!",
+            "Ready for some great conversations",
+            "Thanks for adding me here",
+            "Let's collaborate and grow together",
+            "Excited about this new community"
+          ];
+          
           for (let i = 1; i <= groupCount; i++) {
             const groupName = (groupNamePattern || 'Group {number}').replace('{number}', i.toString());
-            await storage.createGroup({
+            const group = await storage.createGroup({
               orderId: order.id,
               userId,
               groupName,
               telegramGroupId: `sim_${Date.now()}_${i}`,
               inviteLink: `https://t.me/+simulated_${Date.now()}_${i}`,
             });
+            
+            // Auto-send 10-15 random messages per group
+            const messageCount = 10 + Math.floor(Math.random() * 6); // 10-15 messages
+            for (let j = 0; j < messageCount; j++) {
+              const randomMessage = randomMessages[Math.floor(Math.random() * randomMessages.length)];
+              await storage.createAutoMessage(group.id, randomMessage);
+            }
+            
             await storage.updateOrderStatus(order.id, 'processing', i);
           }
           await storage.updateOrderStatus(order.id, 'completed', groupCount);
@@ -290,10 +343,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/payment-settings', async (req, res) => {
     try {
       const settings = await storage.getPaymentSettings();
-      res.json(settings);
+      res.json(settings || { pricePerHundredGroups: '2.00', maxGroupsPerOrder: 10 });
     } catch (error) {
       console.error("Error fetching payment settings:", error);
       res.status(500).json({ message: "Failed to fetch payment settings" });
+    }
+  });
+
+  app.get('/api/wallet-addresses', async (req, res) => {
+    try {
+      const wallets = await storage.getActiveWalletAddresses();
+      res.json(wallets);
+    } catch (error) {
+      console.error("Error fetching wallet addresses:", error);
+      res.status(500).json({ message: "Failed to fetch wallet addresses" });
     }
   });
 
@@ -311,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { amount, type, description, status } = validationResult.data;
+      const { amount, type, description, walletAddressId, status } = validationResult.data;
 
       // Create pending transaction - actual balance update happens on confirmation
       const transaction = await storage.createTransaction({
@@ -319,6 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         amount,
         type,
         description,
+        walletAddressId,
         status: status || 'pending',
       });
 
@@ -363,7 +427,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/admin/payment-settings', isAuthenticated, isAdmin, async (req, res) => {
     try {
-      // Validate input
       const validationResult = paymentSettingSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({ 
@@ -372,19 +435,107 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      const { cryptoCurrency, walletAddress, pricePerHundredGroups, isActive } = validationResult.data;
-
-      const setting = await storage.createPaymentSetting({
-        cryptoCurrency,
-        walletAddress,
-        pricePerHundredGroups,
-        isActive: isActive !== false,
-      });
-
+      const setting = await storage.updatePaymentSettings(validationResult.data);
       res.json(setting);
     } catch (error) {
-      console.error("Error creating payment setting:", error);
-      res.status(500).json({ message: "Failed to create payment setting" });
+      console.error("Error updating payment settings:", error);
+      res.status(500).json({ message: "Failed to update payment settings" });
+    }
+  });
+
+  app.get('/api/admin/wallet-addresses', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const wallets = await storage.getWalletAddresses();
+      res.json(wallets);
+    } catch (error) {
+      console.error("Error fetching wallets:", error);
+      res.status(500).json({ message: "Failed to fetch wallet addresses" });
+    }
+  });
+
+  app.post('/api/admin/wallet-addresses', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const validationResult = walletAddressSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const wallet = await storage.createWalletAddress(validationResult.data);
+      res.json(wallet);
+    } catch (error) {
+      console.error("Error creating wallet:", error);
+      res.status(500).json({ message: "Failed to create wallet address" });
+    }
+  });
+
+  app.patch('/api/admin/wallet-addresses/:id', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const validationResult = walletAddressSchema.partial().safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const wallet = await storage.updateWalletAddress(id, validationResult.data);
+      res.json(wallet);
+    } catch (error) {
+      console.error("Error updating wallet:", error);
+      res.status(500).json({ message: "Failed to update wallet address" });
+    }
+  });
+
+  app.delete('/api/admin/wallet-addresses/:id', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteWalletAddress(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting wallet:", error);
+      res.status(500).json({ message: "Failed to delete wallet address" });
+    }
+  });
+
+  app.post('/api/admin/add-balance', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const validationResult = adminAddBalanceSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const { userId, amount } = validationResult.data;
+      const user = await storage.adminAddBalance(userId, amount);
+      res.json(user);
+    } catch (error) {
+      console.error("Error adding balance:", error);
+      res.status(500).json({ message: "Failed to add balance" });
+    }
+  });
+
+  app.post('/api/admin/approve-payment', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const validationResult = approvePaymentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: validationResult.error.errors 
+        });
+      }
+
+      const { transactionId } = validationResult.data;
+      const transaction = await storage.adminApprovePayment(transactionId);
+      res.json(transaction);
+    } catch (error) {
+      console.error("Error approving payment:", error);
+      res.status(500).json({ message: "Failed to approve payment" });
     }
   });
 

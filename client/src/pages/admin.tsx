@@ -25,8 +25,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2, Users, DollarSign, Settings as SettingsIcon, Plus } from "lucide-react";
-import type { User, PaymentSetting, Transaction } from "@shared/schema";
+import { Loader2, Users, DollarSign, Settings as SettingsIcon, Plus, Check, X } from "lucide-react";
+import type { User, PaymentSetting, Transaction, WalletAddress } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { format } from "date-fns";
@@ -37,7 +37,9 @@ export default function Admin() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [cryptoCurrency, setCryptoCurrency] = useState("USDT");
   const [walletAddress, setWalletAddress] = useState("");
-  const [pricePerHundred, setPricePerHundred] = useState("2.00");
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [balanceToAdd, setBalanceToAdd] = useState("");
+  const [isBalanceDialogOpen, setIsBalanceDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -66,32 +68,35 @@ export default function Admin() {
     queryKey: ["/api/admin/users"],
   });
 
-  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSetting[]>({
+  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSetting>({
     queryKey: ["/api/payment-settings"],
+  });
+
+  const { data: walletAddresses, isLoading: walletsLoading } = useQuery<WalletAddress[]>({
+    queryKey: ["/api/admin/wallet-addresses"],
   });
 
   const { data: transactions, isLoading: transactionsLoading } = useQuery<Transaction[]>({
     queryKey: ["/api/admin/transactions"],
   });
 
-  const addPaymentMutation = useMutation({
+  const addWalletMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/admin/payment-settings", {
+      return await apiRequest("POST", "/api/admin/wallet-addresses", {
         cryptoCurrency,
-        walletAddress,
-        pricePerHundredGroups: pricePerHundred,
+        address: walletAddress,
+        label: `${cryptoCurrency} Wallet`,
         isActive: true,
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payment-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/wallet-addresses"] });
       setIsPaymentDialogOpen(false);
       setCryptoCurrency("USDT");
       setWalletAddress("");
-      setPricePerHundred("2.00");
       toast({
         title: "Success",
-        description: "Payment method added successfully",
+        description: "Wallet address added successfully",
       });
     },
     onError: (error: Error) => {
@@ -106,6 +111,55 @@ export default function Admin() {
         }, 500);
         return;
       }
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const addBalanceMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", "/api/admin/add-balance", {
+        userId: selectedUserId,
+        amount: balanceToAdd,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      setIsBalanceDialogOpen(false);
+      setSelectedUserId("");
+      setBalanceToAdd("");
+      toast({
+        title: "Success",
+        description: "Balance added successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const approvePaymentMutation = useMutation({
+    mutationFn: async (transactionId: string) => {
+      return await apiRequest("POST", "/api/admin/approve-payment", {
+        transactionId,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: "Success",
+        description: "Payment approved and balance credited",
+      });
+    },
+    onError: (error: Error) => {
       toast({
         title: "Error",
         description: error.message,
@@ -147,9 +201,72 @@ export default function Admin() {
 
         <TabsContent value="users" className="space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle>All Users</CardTitle>
-              <CardDescription>Manage registered users and their accounts</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+              <div>
+                <CardTitle>All Users</CardTitle>
+                <CardDescription>Manage registered users and their accounts</CardDescription>
+              </div>
+              <Dialog open={isBalanceDialogOpen} onOpenChange={setIsBalanceDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button data-testid="button-add-balance">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Balance
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Add Balance to User</DialogTitle>
+                    <DialogDescription>Credit a user's account balance</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="user-select">Select User</Label>
+                      <select
+                        id="user-select"
+                        value={selectedUserId}
+                        onChange={(e) => setSelectedUserId(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2"
+                        data-testid="select-user"
+                      >
+                        <option value="">Choose a user...</option>
+                        {users?.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.username} ({u.email || "No email"}) - ${parseFloat(u.balance).toFixed(2)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="amount">Amount ($)</Label>
+                      <Input
+                        id="amount"
+                        type="number"
+                        step="0.01"
+                        value={balanceToAdd}
+                        onChange={(e) => setBalanceToAdd(e.target.value)}
+                        placeholder="Enter amount to add"
+                        data-testid="input-balance-amount"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={() => addBalanceMutation.mutate()}
+                      disabled={addBalanceMutation.isPending || !selectedUserId || !balanceToAdd}
+                      data-testid="button-save-balance"
+                    >
+                      {addBalanceMutation.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Adding...
+                        </>
+                      ) : (
+                        "Add Balance"
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </CardHeader>
             <CardContent>
               {usersLoading ? (
@@ -167,8 +284,8 @@ export default function Admin() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Username</TableHead>
                       <TableHead>Email</TableHead>
-                      <TableHead>Name</TableHead>
                       <TableHead>Balance</TableHead>
                       <TableHead>Admin</TableHead>
                       <TableHead>Joined</TableHead>
@@ -176,13 +293,9 @@ export default function Admin() {
                   </TableHeader>
                   <TableBody>
                     {users.map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell className="font-medium">{u.email || "N/A"}</TableCell>
-                        <TableCell>
-                          {u.firstName && u.lastName
-                            ? `${u.firstName} ${u.lastName}`
-                            : u.firstName || u.lastName || "N/A"}
-                        </TableCell>
+                      <TableRow key={u.id} data-testid={`user-row-${u.id}`}>
+                        <TableCell className="font-medium">{u.username}</TableCell>
+                        <TableCell>{u.email || "N/A"}</TableCell>
                         <TableCell className="font-mono">${parseFloat(u.balance).toFixed(2)}</TableCell>
                         <TableCell>
                           {u.isAdmin ? (
@@ -212,15 +325,15 @@ export default function Admin() {
               </div>
               <Dialog open={isPaymentDialogOpen} onOpenChange={setIsPaymentDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button data-testid="button-add-payment">
+                  <Button data-testid="button-add-wallet">
                     <Plus className="h-4 w-4 mr-2" />
-                    Add Payment Method
+                    Add Wallet Address
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Add Payment Method</DialogTitle>
-                    <DialogDescription>Configure a new cryptocurrency payment option</DialogDescription>
+                    <DialogTitle>Add Wallet Address</DialogTitle>
+                    <DialogDescription>Add a new cryptocurrency wallet for payments</DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
@@ -244,31 +357,20 @@ export default function Admin() {
                         data-testid="input-wallet"
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="price">Price per 100 Groups ($)</Label>
-                      <Input
-                        id="price"
-                        type="number"
-                        step="0.01"
-                        value={pricePerHundred}
-                        onChange={(e) => setPricePerHundred(e.target.value)}
-                        data-testid="input-price"
-                      />
-                    </div>
                   </div>
                   <DialogFooter>
                     <Button
-                      onClick={() => addPaymentMutation.mutate()}
-                      disabled={addPaymentMutation.isPending || !walletAddress}
-                      data-testid="button-save-payment"
+                      onClick={() => addWalletMutation.mutate()}
+                      disabled={addWalletMutation.isPending || !walletAddress}
+                      data-testid="button-save-wallet"
                     >
-                      {addPaymentMutation.isPending ? (
+                      {addWalletMutation.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Saving...
                         </>
                       ) : (
-                        "Save Payment Method"
+                        "Save Wallet"
                       )}
                     </Button>
                   </DialogFooter>
@@ -276,37 +378,40 @@ export default function Admin() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {settingsLoading ? (
+              {walletsLoading ? (
                 <div className="space-y-2">
                   {[1, 2].map((i) => (
                     <div key={i} className="h-20 bg-muted animate-pulse rounded" />
                   ))}
                 </div>
-              ) : !paymentSettings || paymentSettings.length === 0 ? (
+              ) : !walletAddresses || walletAddresses.length === 0 ? (
                 <div className="text-center py-12">
                   <DollarSign className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                  <p className="text-muted-foreground">No payment methods configured</p>
+                  <p className="text-muted-foreground">No wallet addresses configured</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {paymentSettings.map((setting) => (
+                  {walletAddresses.map((wallet) => (
                     <div
-                      key={setting.id}
+                      key={wallet.id}
                       className="flex items-center justify-between p-4 border rounded-lg"
+                      data-testid={`wallet-${wallet.id}`}
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <p className="font-semibold">{setting.cryptoCurrency}</p>
-                          {setting.isActive && (
+                          <p className="font-semibold">{wallet.cryptoCurrency}</p>
+                          {wallet.isActive && (
                             <Badge variant="default">Active</Badge>
                           )}
                         </div>
                         <p className="text-sm text-muted-foreground font-mono">
-                          {setting.walletAddress}
+                          {wallet.address}
                         </p>
-                        <p className="text-sm text-muted-foreground">
-                          ${parseFloat(setting.pricePerHundredGroups).toFixed(2)} per 100 groups
-                        </p>
+                        {wallet.label && (
+                          <p className="text-sm text-muted-foreground">
+                            {wallet.label}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -341,11 +446,12 @@ export default function Admin() {
                       <TableHead>Type</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {transactions.map((tx) => (
-                      <TableRow key={tx.id}>
+                      <TableRow key={tx.id} data-testid={`transaction-row-${tx.id}`}>
                         <TableCell>
                           {tx.createdAt ? format(new Date(tx.createdAt), "MMM d, yyyy h:mm a") : "N/A"}
                         </TableCell>
@@ -366,6 +472,21 @@ export default function Admin() {
                             {tx.status}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          {tx.status === "pending" && tx.type === "credit" && (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => approvePaymentMutation.mutate(tx.id)}
+                                disabled={approvePaymentMutation.isPending}
+                                data-testid={`button-approve-${tx.id}`}
+                              >
+                                <Check className="h-4 w-4 mr-1" />
+                                Approve
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -382,11 +503,22 @@ export default function Admin() {
               <CardDescription>Global settings and preferences</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label>Default Pricing</Label>
-                <p className="text-sm text-muted-foreground">
-                  Configure payment methods in the Payments tab
-                </p>
+              <div className="space-y-4">
+                <Label>Pricing Configuration</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Price per 100 Groups</span>
+                    <span className="font-mono font-medium">
+                      ${paymentSettings ? parseFloat(paymentSettings.pricePerHundredGroups).toFixed(2) : '2.00'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Max Groups per Order</span>
+                    <span className="font-mono font-medium">
+                      {paymentSettings?.maxGroupsPerOrder || 10}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Platform Status</Label>
