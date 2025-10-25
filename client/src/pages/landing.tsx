@@ -84,10 +84,20 @@ export default function Landing() {
             </Card>
           </div>
 
-          <div className="mt-12 p-6 bg-muted rounded-lg">
-            <p className="text-sm text-muted-foreground">
-              Join 500+ users automating Telegram groups
-            </p>
+          <div className="mt-12 space-y-4">
+            <div className="p-6 bg-muted rounded-lg">
+              <p className="text-sm text-muted-foreground">
+                Join 500+ users automating Telegram groups
+              </p>
+            </div>
+            <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">
+                Admin Access
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300">
+                Username: <code className="bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">admin</code> | Password: <code className="bg-blue-100 dark:bg-blue-900 px-2 py-0.5 rounded">admin123</code>
+              </p>
+            </div>
           </div>
         </div>
       </main>

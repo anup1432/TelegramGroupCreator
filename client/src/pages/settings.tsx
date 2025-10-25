@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Plus, Trash2, CheckCircle, AlertCircle } from "lucide-react";
-import type { TelegramConnection } from "@shared/schema";
+import type { TelegramConnectionType } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import {
@@ -47,7 +47,7 @@ export default function Settings() {
     }
   }, [isAuthenticated, authLoading, toast]);
 
-  const { data: connections, isLoading: connectionsLoading } = useQuery<TelegramConnection[]>({
+  const { data: connections, isLoading: connectionsLoading } = useQuery<TelegramConnectionType[]>({
     queryKey: ["/api/telegram-connections"],
   });
 
@@ -203,9 +203,14 @@ export default function Settings() {
             <CardTitle>Telegram Connections</CardTitle>
             <CardDescription>Connect your Telegram account to create groups</CardDescription>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              resetForm();
+            }
+          }}>
             <DialogTrigger asChild>
-              <Button onClick={resetForm} data-testid="button-add-connection">
+              <Button data-testid="button-add-connection">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Connection
               </Button>

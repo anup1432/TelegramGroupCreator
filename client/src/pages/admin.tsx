@@ -26,7 +26,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Loader2, Users, DollarSign, Settings as SettingsIcon, Plus, Check, X } from "lucide-react";
-import type { User, PaymentSetting, Transaction, WalletAddress } from "@shared/schema";
+import type { UserType, PaymentSettingType, TransactionType, WalletAddressType } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { format } from "date-fns";
@@ -64,19 +64,19 @@ export default function Admin() {
     }
   }, [isAuthenticated, authLoading, user, toast]);
 
-  const { data: users, isLoading: usersLoading } = useQuery<User[]>({
+  const { data: users, isLoading: usersLoading } = useQuery<UserType[]>({
     queryKey: ["/api/admin/users"],
   });
 
-  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSetting>({
+  const { data: paymentSettings, isLoading: settingsLoading } = useQuery<PaymentSettingType>({
     queryKey: ["/api/payment-settings"],
   });
 
-  const { data: walletAddresses, isLoading: walletsLoading } = useQuery<WalletAddress[]>({
+  const { data: walletAddresses, isLoading: walletsLoading } = useQuery<WalletAddressType[]>({
     queryKey: ["/api/admin/wallet-addresses"],
   });
 
-  const { data: transactions, isLoading: transactionsLoading } = useQuery<Transaction[]>({
+  const { data: transactions, isLoading: transactionsLoading } = useQuery<TransactionType[]>({
     queryKey: ["/api/admin/transactions"],
   });
 
@@ -231,7 +231,7 @@ export default function Admin() {
                         <option value="">Choose a user...</option>
                         {users?.map((u) => (
                           <option key={u.id} value={u.id}>
-                            {u.username} ({u.email || "No email"}) - ${parseFloat(u.balance).toFixed(2)}
+                            {u.username} ({u.email || "No email"}) - ${u.balance.toFixed(2)}
                           </option>
                         ))}
                       </select>
@@ -296,7 +296,7 @@ export default function Admin() {
                       <TableRow key={u.id} data-testid={`user-row-${u.id}`}>
                         <TableCell className="font-medium">{u.username}</TableCell>
                         <TableCell>{u.email || "N/A"}</TableCell>
-                        <TableCell className="font-mono">${parseFloat(u.balance).toFixed(2)}</TableCell>
+                        <TableCell className="font-mono">${u.balance.toFixed(2)}</TableCell>
                         <TableCell>
                           {u.isAdmin ? (
                             <Badge variant="default">Admin</Badge>
@@ -457,7 +457,7 @@ export default function Admin() {
                         </TableCell>
                         <TableCell className="font-mono text-sm">{tx.userId.substring(0, 8)}</TableCell>
                         <TableCell className="capitalize">{tx.type}</TableCell>
-                        <TableCell className="font-mono">${parseFloat(tx.amount).toFixed(2)}</TableCell>
+                        <TableCell className="font-mono">${tx.amount.toFixed(2)}</TableCell>
                         <TableCell>
                           <Badge
                             variant={
@@ -509,7 +509,7 @@ export default function Admin() {
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Price per 100 Groups</span>
                     <span className="font-mono font-medium">
-                      ${paymentSettings ? parseFloat(paymentSettings.pricePerHundredGroups).toFixed(2) : '2.00'}
+                      ${paymentSettings ? paymentSettings.pricePerHundredGroups.toFixed(2) : '2.00'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
