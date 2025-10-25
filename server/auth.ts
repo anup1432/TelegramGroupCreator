@@ -1,35 +1,21 @@
 import session from "express-session";
-import MongoStore from "connect-mongo";
 import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 import { loginSchema, registerSchema } from "@shared/schema";
 import { fromError } from "zod-validation-error";
 
-if (!process.env.SESSION_SECRET) {
-  throw new Error("SESSION_SECRET environment variable is required");
-}
-
-const MONGODB_URL = process.env.MONGODB_URL || process.env.DATABASE_URL;
-
-if (!MONGODB_URL) {
-  throw new Error("MONGODB_URL or DATABASE_URL environment variable is required");
-}
+const SESSION_SECRET = process.env.SESSION_SECRET || "dev-secret-change-in-production";
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000;
   
   return session({
-    secret: process.env.SESSION_SECRET!,
-    store: MongoStore.create({
-      mongoUrl: MONGODB_URL,
-      ttl: sessionTtl / 1000,
-      touchAfter: 24 * 3600,
-    }),
+    secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: sessionTtl,
     },

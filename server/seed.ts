@@ -1,5 +1,4 @@
 import { storage } from "./storage";
-import { User } from "@shared/schema";
 
 export async function seedAdminUser() {
   try {
@@ -18,7 +17,7 @@ export async function seedAdminUser() {
         "User"
       );
       
-      await User.findByIdAndUpdate(adminUser.id, { isAdmin: true });
+      await (storage as any).setUserAsAdmin(adminUser.id);
       
       console.log("Admin user created successfully (username: admin, password: admin123)");
     } else {

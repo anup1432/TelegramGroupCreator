@@ -1,12 +1,4 @@
 import {
-  User,
-  TelegramConnection,
-  Order,
-  Group,
-  Transaction,
-  PaymentSetting,
-  WalletAddress,
-  AutoMessage,
   type UserType,
   type TelegramConnectionType,
   type InsertTelegramConnection,
@@ -22,12 +14,6 @@ import {
   type AutoMessageType,
 } from "@shared/schema";
 import bcrypt from "bcrypt";
-import mongoose from "mongoose";
-
-function convertToId<T extends { _id: any }>(doc: T): Omit<T, '_id'> & { id: string } {
-  const { _id, ...rest } = doc;
-  return { ...rest, id: _id.toString() } as Omit<T, '_id'> & { id: string };
-}
 
 export interface IStorage {
   getUser(id: string): Promise<UserType | undefined>;
@@ -78,90 +64,133 @@ export interface IStorage {
   }>;
 }
 
-export class DatabaseStorage implements IStorage {
+class MemStorage implements IStorage {
+  private users: Map<string, UserType & { password: string }> = new Map();
+  private telegramConnections: Map<string, TelegramConnectionType> = new Map();
+  private orders: Map<string, OrderType> = new Map();
+  private groups: Map<string, GroupType> = new Map();
+  private transactions: Map<string, TransactionType> = new Map();
+  private paymentSettings: PaymentSettingType | null = null;
+  private walletAddresses: Map<string, WalletAddressType> = new Map();
+  private autoMessages: Map<string, AutoMessageType> = new Map();
+  
+  private generateId(): string {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  }
+
   async getUser(id: string): Promise<UserType | undefined> {
-    const user = await User.findById(id).select('-password').lean();
-    return user ? convertToId(user as any) as UserType : undefined;
+    const user = this.users.get(id);
+    if (!user) return undefined;
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 
   async getUserByUsername(username: string): Promise<UserType | undefined> {
-    const user = await User.findOne({ username }).select('-password').lean();
-    return user ? convertToId(user as any) as UserType : undefined;
+    const userArray = Array.from(this.users.values());
+    for (const user of userArray) {
+      if (user.username === username) {
+        const { password, ...userWithoutPassword } = user;
+        return userWithoutPassword;
+      }
+    }
+    return undefined;
   }
 
   async createUser(username: string, password: string, email?: string, firstName?: string, lastName?: string): Promise<UserType> {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await User.create({
+    const id = this.generateId();
+    const user: UserType & { password: string } = {
+      id,
       username,
       password: hashedPassword,
       email,
       firstName,
       lastName,
-    });
-    const { password: _, ...userWithoutPassword } = user.toObject();
-    return convertToId(userWithoutPassword) as UserType;
+      balance: 0,
+      isAdmin: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.users.set(id, user);
+    const { password: _, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 
   async verifyPassword(userId: string, password: string): Promise<boolean> {
-    const user = await User.findById(userId);
+    const user = this.users.get(userId);
     if (!user) return false;
     return await bcrypt.compare(password, user.password);
   }
 
   async getAllUsers(): Promise<UserType[]> {
-    const users = await User.find().select('-password').lean();
-    return users.map(u => convertToId(u as any)) as UserType[];
+    const users: UserType[] = [];
+    const userArray = Array.from(this.users.values());
+    for (const user of userArray) {
+      const { password, ...userWithoutPassword } = user;
+      users.push(userWithoutPassword);
+    }
+    return users;
   }
 
   async updateUserBalance(userId: string, amount: number): Promise<UserType> {
-    const user = await User.findByIdAndUpdate(
-      userId,
-      { $inc: { balance: amount }, updatedAt: new Date() },
-      { new: true }
-    ).select('-password');
+    const user = this.users.get(userId);
     if (!user) throw new Error('User not found');
-    return convertToId(user.toObject()) as UserType;
+    user.balance += amount;
+    user.updatedAt = new Date();
+    const { password, ...userWithoutPassword } = user;
+    return userWithoutPassword;
   }
 
   async getTelegramConnections(userId: string): Promise<TelegramConnectionType[]> {
-    const connections = await TelegramConnection.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
-    return connections.map(c => convertToId(c)) as TelegramConnectionType[];
+    return Array.from(this.telegramConnections.values())
+      .filter(c => c.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getActiveTelegramConnection(userId: string): Promise<TelegramConnectionType | undefined> {
-    const connection = await TelegramConnection.findOne({ userId, isActive: true }).lean();
-    return connection ? convertToId(connection as any) as TelegramConnectionType : undefined;
+    return Array.from(this.telegramConnections.values())
+      .find(c => c.userId === userId && c.isActive);
   }
 
   async createTelegramConnection(connectionData: InsertTelegramConnection): Promise<TelegramConnectionType> {
-    const connection = await TelegramConnection.create(connectionData);
-    return convertToId(connection.toObject()) as TelegramConnectionType;
+    const id = this.generateId();
+    const connection: TelegramConnectionType = {
+      id,
+      ...connectionData,
+      isActive: connectionData.isActive ?? true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.telegramConnections.set(id, connection);
+    return connection;
   }
 
   async deleteTelegramConnection(id: string): Promise<void> {
-    await TelegramConnection.findByIdAndDelete(id);
+    this.telegramConnections.delete(id);
   }
 
   async createOrder(orderData: InsertOrder): Promise<OrderType> {
-    const order = await Order.create(orderData);
-    return convertToId(order.toObject()) as OrderType;
+    const id = this.generateId();
+    const order: OrderType = {
+      id,
+      ...orderData,
+      isPrivate: orderData.isPrivate ?? false,
+      status: 'pending',
+      groupsCreated: 0,
+      createdAt: new Date(),
+    };
+    this.orders.set(id, order);
+    return order;
   }
 
   async getOrdersByUser(userId: string): Promise<OrderType[]> {
-    const orders = await Order.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
-    return orders.map(o => convertToId(o)) as OrderType[];
+    return Array.from(this.orders.values())
+      .filter(o => o.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getRecentOrdersByUser(userId: string, limit: number = 5): Promise<OrderType[]> {
-    const orders = await Order.find({ userId })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .lean();
-    return orders.map(o => convertToId(o)) as OrderType[];
+    return this.getOrdersByUser(userId).then(orders => orders.slice(0, limit));
   }
 
   async updateOrderStatus(
@@ -170,23 +199,21 @@ export class DatabaseStorage implements IStorage {
     groupsCreated?: number,
     errorMessage?: string
   ): Promise<OrderType> {
-    const updateData: any = { status };
-    
-    if (groupsCreated !== undefined) {
-      updateData.groupsCreated = groupsCreated;
-    }
-    
-    if (errorMessage) {
-      updateData.errorMessage = errorMessage;
-    }
-
-    if (status === 'completed') {
-      updateData.completedAt = new Date();
-    }
-
-    const order = await Order.findByIdAndUpdate(orderId, updateData, { new: true });
+    const order = this.orders.get(orderId);
     if (!order) throw new Error('Order not found');
-    return convertToId(order.toObject()) as OrderType;
+    
+    order.status = status;
+    if (groupsCreated !== undefined) {
+      order.groupsCreated = groupsCreated;
+    }
+    if (errorMessage) {
+      order.errorMessage = errorMessage;
+    }
+    if (status === 'completed') {
+      order.completedAt = new Date();
+    }
+    
+    return order;
   }
 
   async createGroup(groupData: {
@@ -196,111 +223,128 @@ export class DatabaseStorage implements IStorage {
     telegramGroupId?: string;
     inviteLink?: string;
   }): Promise<GroupType> {
-    const group = await Group.create(groupData);
-    return convertToId(group.toObject()) as GroupType;
+    const id = this.generateId();
+    const group: GroupType = {
+      id,
+      ...groupData,
+      createdAt: new Date(),
+    };
+    this.groups.set(id, group);
+    return group;
   }
 
   async getGroupsByOrder(orderId: string): Promise<GroupType[]> {
-    const groups = await Group.find({ orderId }).lean();
-    return groups.map(g => convertToId(g)) as GroupType[];
+    return Array.from(this.groups.values()).filter(g => g.orderId === orderId);
   }
 
   async createTransaction(transactionData: InsertTransaction): Promise<TransactionType> {
-    const transaction = await Transaction.create(transactionData);
-    return convertToId(transaction.toObject()) as TransactionType;
+    const id = this.generateId();
+    const transaction: TransactionType = {
+      id,
+      ...transactionData,
+      status: transactionData.status ?? 'pending',
+      createdAt: new Date(),
+    };
+    this.transactions.set(id, transaction);
+    return transaction;
   }
 
   async getTransactionsByUser(userId: string): Promise<TransactionType[]> {
-    const transactions = await Transaction.find({ userId })
-      .sort({ createdAt: -1 })
-      .lean();
-    return transactions.map(t => convertToId(t)) as TransactionType[];
+    return Array.from(this.transactions.values())
+      .filter(t => t.userId === userId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getAllTransactions(): Promise<TransactionType[]> {
-    const transactions = await Transaction.find()
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean();
-    return transactions.map(t => convertToId(t)) as TransactionType[];
+    return Array.from(this.transactions.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 100);
   }
 
   async updateTransactionStatus(id: string, status: string, txHash?: string): Promise<TransactionType> {
-    const updateData: any = { status };
-    if (txHash) {
-      updateData.txHash = txHash;
-    }
-    
-    const transaction = await Transaction.findByIdAndUpdate(id, updateData, { new: true });
+    const transaction = this.transactions.get(id);
     if (!transaction) throw new Error('Transaction not found');
-    return convertToId(transaction.toObject()) as TransactionType;
+    transaction.status = status;
+    if (txHash) {
+      transaction.txHash = txHash;
+    }
+    return transaction;
   }
 
   async getPaymentSettings(): Promise<PaymentSettingType | undefined> {
-    const setting = await PaymentSetting.findOne().lean();
-    return setting ? convertToId(setting as any) as PaymentSettingType : undefined;
+    return this.paymentSettings || undefined;
   }
 
   async updatePaymentSettings(settingsData: InsertPaymentSetting): Promise<PaymentSettingType> {
-    const existing = await this.getPaymentSettings();
-    
-    if (existing) {
-      const updated = await PaymentSetting.findByIdAndUpdate(
-        existing.id,
-        { ...settingsData, updatedAt: new Date() },
-        { new: true }
-      );
-      if (!updated) throw new Error('Failed to update payment settings');
-      return convertToId(updated.toObject()) as PaymentSettingType;
+    if (this.paymentSettings) {
+      this.paymentSettings = {
+        ...this.paymentSettings,
+        ...settingsData,
+        updatedAt: new Date(),
+      };
     } else {
-      const created = await PaymentSetting.create(settingsData);
-      return convertToId(created.toObject()) as PaymentSettingType;
+      const id = this.generateId();
+      this.paymentSettings = {
+        id,
+        ...settingsData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
     }
+    return this.paymentSettings;
   }
 
   async getWalletAddresses(): Promise<WalletAddressType[]> {
-    const wallets = await WalletAddress.find()
-      .sort({ createdAt: -1 })
-      .lean();
-    return wallets.map(w => convertToId(w)) as WalletAddressType[];
+    return Array.from(this.walletAddresses.values())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getActiveWalletAddresses(): Promise<WalletAddressType[]> {
-    const wallets = await WalletAddress.find({ isActive: true })
-      .sort({ createdAt: -1 })
-      .lean();
-    return wallets.map(w => convertToId(w)) as WalletAddressType[];
+    return Array.from(this.walletAddresses.values())
+      .filter(w => w.isActive)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async createWalletAddress(walletData: InsertWalletAddress): Promise<WalletAddressType> {
-    const wallet = await WalletAddress.create(walletData);
-    return convertToId(wallet.toObject()) as WalletAddressType;
+    const id = this.generateId();
+    const wallet: WalletAddressType = {
+      id,
+      ...walletData,
+      isActive: walletData.isActive ?? true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    this.walletAddresses.set(id, wallet);
+    return wallet;
   }
 
   async updateWalletAddress(id: string, walletData: Partial<InsertWalletAddress>): Promise<WalletAddressType> {
-    const wallet = await WalletAddress.findByIdAndUpdate(
-      id,
-      { ...walletData, updatedAt: new Date() },
-      { new: true }
-    );
+    const wallet = this.walletAddresses.get(id);
     if (!wallet) throw new Error('Wallet address not found');
-    return convertToId(wallet.toObject()) as WalletAddressType;
+    Object.assign(wallet, walletData, { updatedAt: new Date() });
+    return wallet;
   }
 
   async deleteWalletAddress(id: string): Promise<void> {
-    await WalletAddress.findByIdAndDelete(id);
+    this.walletAddresses.delete(id);
   }
 
   async createAutoMessage(groupId: string, message: string): Promise<AutoMessageType> {
-    const autoMessage = await AutoMessage.create({ groupId, message });
-    return convertToId(autoMessage.toObject()) as AutoMessageType;
+    const id = this.generateId();
+    const autoMessage: AutoMessageType = {
+      id,
+      groupId,
+      message,
+      sentAt: new Date(),
+    };
+    this.autoMessages.set(id, autoMessage);
+    return autoMessage;
   }
 
   async getAutoMessagesByGroup(groupId: string): Promise<AutoMessageType[]> {
-    const messages = await AutoMessage.find({ groupId })
-      .sort({ sentAt: -1 })
-      .lean();
-    return messages.map(m => convertToId(m)) as AutoMessageType[];
+    return Array.from(this.autoMessages.values())
+      .filter(m => m.groupId === groupId)
+      .sort((a, b) => b.sentAt.getTime() - a.sentAt.getTime());
   }
 
   async adminAddBalance(userId: string, amount: number): Promise<UserType> {
@@ -318,7 +362,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async adminApprovePayment(transactionId: string): Promise<TransactionType> {
-    const transaction = await Transaction.findById(transactionId);
+    const transaction = this.transactions.get(transactionId);
     
     if (!transaction) {
       throw new Error('Transaction not found');
@@ -337,11 +381,11 @@ export class DatabaseStorage implements IStorage {
     activeOrders: number;
     completedOrders: number;
   }> {
-    const user = await User.findById(userId);
+    const user = this.users.get(userId);
     
-    const userOrders = await Order.find({ userId });
+    const userOrders = Array.from(this.orders.values()).filter(o => o.userId === userId);
     
-    const totalGroups = await Group.countDocuments({ userId });
+    const totalGroups = Array.from(this.groups.values()).filter(g => g.userId === userId).length;
 
     const activeOrdersCount = userOrders.filter(
       o => o.status === 'pending' || o.status === 'processing'
@@ -358,6 +402,13 @@ export class DatabaseStorage implements IStorage {
       completedOrders: completedOrdersCount,
     };
   }
+
+  async setUserAsAdmin(userId: string): Promise<void> {
+    const user = this.users.get(userId);
+    if (user) {
+      user.isAdmin = true;
+    }
+  }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new MemStorage();

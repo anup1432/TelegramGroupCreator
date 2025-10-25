@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { connectDB } from "./db";
 
 const app = express();
 
@@ -48,9 +47,6 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Connect to MongoDB first
-  await connectDB();
-  
   // Seed admin user
   const { seedAdminUser } = await import("./seed");
   await seedAdminUser();

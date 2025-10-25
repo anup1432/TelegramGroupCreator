@@ -1,5 +1,4 @@
 import { z } from "zod";
-import mongoose, { Schema, Document } from "mongoose";
 
 export const loginSchema = z.object({
   username: z.string().min(3).max(50),
@@ -17,7 +16,7 @@ export const registerSchema = z.object({
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 
-export interface IUser extends Document {
+export interface IUser {
   username: string;
   password: string;
   email?: string;
@@ -30,8 +29,8 @@ export interface IUser extends Document {
   updatedAt: Date;
 }
 
-export interface ITelegramConnection extends Document {
-  userId: mongoose.Types.ObjectId;
+export interface ITelegramConnection {
+  userId: string;
   apiId: string;
   apiHash: string;
   phoneNumber: string;
@@ -41,8 +40,8 @@ export interface ITelegramConnection extends Document {
   updatedAt: Date;
 }
 
-export interface IOrder extends Document {
-  userId: mongoose.Types.ObjectId;
+export interface IOrder {
+  userId: string;
   groupCount: number;
   cost: number;
   status: string;
@@ -54,27 +53,27 @@ export interface IOrder extends Document {
   completedAt?: Date;
 }
 
-export interface IGroup extends Document {
-  orderId: mongoose.Types.ObjectId;
-  userId: mongoose.Types.ObjectId;
+export interface IGroup {
+  orderId: string;
+  userId: string;
   telegramGroupId?: string;
   groupName: string;
   inviteLink?: string;
   createdAt: Date;
 }
 
-export interface ITransaction extends Document {
-  userId: mongoose.Types.ObjectId;
+export interface ITransaction {
+  userId: string;
   type: string;
   amount: number;
   description: string;
   status: string;
   txHash?: string;
-  walletAddressId?: mongoose.Types.ObjectId;
+  walletAddressId?: string;
   createdAt: Date;
 }
 
-export interface IWalletAddress extends Document {
+export interface IWalletAddress {
   cryptoCurrency: string;
   address: string;
   label?: string;
@@ -83,96 +82,18 @@ export interface IWalletAddress extends Document {
   updatedAt: Date;
 }
 
-export interface IPaymentSetting extends Document {
+export interface IPaymentSetting {
   pricePerHundredGroups: number;
   maxGroupsPerOrder: number;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface IAutoMessage extends Document {
-  groupId: mongoose.Types.ObjectId;
+export interface IAutoMessage {
+  groupId: string;
   message: string;
   sentAt: Date;
 }
-
-const UserSchema = new Schema<IUser>({
-  username: { type: String, required: true, unique: true, maxlength: 50 },
-  password: { type: String, required: true, maxlength: 255 },
-  email: { type: String, unique: true, sparse: true },
-  firstName: String,
-  lastName: String,
-  profileImageUrl: String,
-  balance: { type: Number, default: 0, required: true },
-  isAdmin: { type: Boolean, default: false, required: true },
-}, { timestamps: true });
-
-const TelegramConnectionSchema = new Schema<ITelegramConnection>({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  apiId: { type: String, required: true },
-  apiHash: { type: String, required: true },
-  phoneNumber: { type: String, required: true },
-  sessionString: String,
-  isActive: { type: Boolean, default: true, required: true },
-}, { timestamps: true });
-
-const OrderSchema = new Schema<IOrder>({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  groupCount: { type: Number, required: true },
-  cost: { type: Number, required: true },
-  status: { type: String, default: 'pending', required: true },
-  groupsCreated: { type: Number, default: 0, required: true },
-  groupNamePattern: String,
-  isPrivate: { type: Boolean, default: false, required: true },
-  errorMessage: String,
-  createdAt: { type: Date, default: Date.now },
-  completedAt: Date,
-}, { timestamps: false });
-
-const GroupSchema = new Schema<IGroup>({
-  orderId: { type: Schema.Types.ObjectId, ref: 'Order', required: true },
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  telegramGroupId: String,
-  groupName: { type: String, required: true },
-  inviteLink: String,
-}, { timestamps: true });
-
-const TransactionSchema = new Schema<ITransaction>({
-  userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { type: String, required: true },
-  amount: { type: Number, required: true },
-  description: { type: String, required: true },
-  status: { type: String, default: 'pending', required: true },
-  txHash: String,
-  walletAddressId: { type: Schema.Types.ObjectId, ref: 'WalletAddress' },
-}, { timestamps: true });
-
-const WalletAddressSchema = new Schema<IWalletAddress>({
-  cryptoCurrency: { type: String, required: true, maxlength: 50 },
-  address: { type: String, required: true },
-  label: String,
-  isActive: { type: Boolean, default: true, required: true },
-}, { timestamps: true });
-
-const PaymentSettingSchema = new Schema<IPaymentSetting>({
-  pricePerHundredGroups: { type: Number, default: 2.0, required: true },
-  maxGroupsPerOrder: { type: Number, default: 10, required: true },
-}, { timestamps: true });
-
-const AutoMessageSchema = new Schema<IAutoMessage>({
-  groupId: { type: Schema.Types.ObjectId, ref: 'Group', required: true },
-  message: { type: String, required: true },
-  sentAt: { type: Date, default: Date.now },
-});
-
-export const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
-export const TelegramConnection = mongoose.models.TelegramConnection || mongoose.model<ITelegramConnection>('TelegramConnection', TelegramConnectionSchema);
-export const Order = mongoose.models.Order || mongoose.model<IOrder>('Order', OrderSchema);
-export const Group = mongoose.models.Group || mongoose.model<IGroup>('Group', GroupSchema);
-export const Transaction = mongoose.models.Transaction || mongoose.model<ITransaction>('Transaction', TransactionSchema);
-export const WalletAddress = mongoose.models.WalletAddress || mongoose.model<IWalletAddress>('WalletAddress', WalletAddressSchema);
-export const PaymentSetting = mongoose.models.PaymentSetting || mongoose.model<IPaymentSetting>('PaymentSetting', PaymentSettingSchema);
-export const AutoMessage = mongoose.models.AutoMessage || mongoose.model<IAutoMessage>('AutoMessage', AutoMessageSchema);
 
 export const insertTelegramConnectionSchema = z.object({
   userId: z.string(),
