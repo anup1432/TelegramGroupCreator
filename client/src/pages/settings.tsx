@@ -151,6 +151,34 @@ export default function Settings() {
   };
 
   const handleNext = () => {
+    if (step === 1) {
+      if (!apiId || !apiHash || !phoneNumber) {
+        toast({
+          title: "Validation Error",
+          description: "Please fill in all fields",
+          variant: "destructive",
+        });
+        return;
+      }
+    } else if (step === 2) {
+      if (!phoneCodeHash) {
+        toast({
+          title: "Session Error",
+          description: "Phone code hash is missing. Please start again.",
+          variant: "destructive",
+        });
+        resetForm();
+        return;
+      }
+      if (!otp || otp.length < 5) {
+        toast({
+          title: "Validation Error",
+          description: "Please enter a valid OTP code",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
     connectMutation.mutate();
   };
 

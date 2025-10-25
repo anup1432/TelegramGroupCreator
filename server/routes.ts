@@ -281,8 +281,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/telegram/verify-otp', isAuthenticated, async (req: any, res) => {
     try {
+      console.log('OTP Verification Request:', JSON.stringify(req.body, null, 2));
       const validationResult = verifyOtpSchema.safeParse(req.body);
       if (!validationResult.success) {
+        console.log('Validation Errors:', JSON.stringify(validationResult.error.errors, null, 2));
         return res.status(400).json({ 
           message: "Invalid input", 
           errors: validationResult.error.errors 
